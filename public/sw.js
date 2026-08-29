@@ -1,4 +1,4 @@
-const CACHE = "parkbcn-v1";
+const CACHE = "parkbcn-v2";
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => {

@@ -1,72 +1,66 @@
-# ParkBCN V1
+# ParkBCN V2
 
-PWA móvil para visualizar zonas de estacionamiento regulado de Barcelona metropolitana usando la capa pública GIS de AMB.
+PWA móvil para consultar estacionamiento regulado en Barcelona metropolitana con datos GIS de AMB y comprobación de fuentes oficiales.
 
-## Incluye
+## Qué añade V2
 
-- Mapa OpenStreetMap + Leaflet.
-- GPS del móvil.
-- Carga de tramos oficiales AMB por el área visible del mapa.
-- Zona azul / verde con ciudad, horario, tarifa y tiempo máximo cuando AMB lo proporciona.
-- Detección orientativa de la zona regulada más cercana.
-- Botón **He aparcado aquí**.
-- Temporizador basado en el tiempo máximo publicado por AMB.
-- Aviso local 15 minutos antes mientras la PWA está activa.
-- Comandos de voz básicos:
-  - "He aparcado aquí"
-  - "Parking libre aquí" / "Zona blanca"
-  - "Dónde estoy"
-- Puntos personales de parking libre guardados en `localStorage`.
-- Manifest PWA.
-- Dockerfile listo para EasyPanel.
+- Perfil local de residente: municipio, zona/barrio autorizado y matrícula opcional.
+- La app no presupone que ser residente de un municipio te autorice en todas sus zonas. En L'Hospitalet puede confirmarse un tramo conocido como parte de la zona residente asignada.
+- Panel de decisión resumida: gratis ahora / regulado / residentes / regulación especial / no identificado.
+- Fuentes oficiales en una ventana **ⓘ Más info** con enlace directo y fecha de comprobación.
+- Consulta en vivo del Ayuntamiento de L'Hospitalet, AREA Barcelona, AMB y BOE según el municipio.
+- Detección de excepciones temporales publicadas en la fuente oficial, empezando por la gratuidad de agosto de L'Hospitalet cuando está vigente.
+- Modo conducción con seguimiento GPS y Screen Wake Lock cuando el navegador lo permite.
+- Al iniciar un aparcamiento desaparece el botón **He aparcado aquí** para evitar reiniciar el contador accidentalmente.
+- Guía rápida de colores y marcas mediante **ⓘ**.
+- Colores AMB ampliados: verde, azul, naranja y rojo.
+- Parking libre personal sigue guardándose como referencia local.
 
-## Fuente oficial inicial
+## Datos oficiales
+
+### Geometría de zonas reguladas
 
 AMB ArcGIS:
 `https://ide.amb.cat/geoserveis/rest/services/plataforma_metropolitana_aparcament/MapServer/0`
 
-La capa ofrece geometrías tipo línea y campos como:
-`CIUTAT`, `TRAM`, `TRAM_TIPUS`, `TARIFA`, `HORARI`, `PREU_FRACCIO`, `TEMPS_MAX_HORES`, `TEMPS_MAX_MINUTS`, `PLACES`.
+Campos usados:
+`CIUTAT`, `TRAM`, `TRAM_ID`, `TRAM_TIPUS`, `TARIFA`, `HORARI`, `PREU_FRACCIO`, `TEMPS_MAX_HORES`, `TEMPS_MAX_MINUTS`, `PLACES`.
 
-## Probar localmente
+### Fuentes de reglas
 
-```bash
-npm install
-npm run dev
-```
+El endpoint `/api/official?city=...` consulta una lista cerrada de fuentes oficiales para evitar depender de blogs o agregadores:
 
-Abrir:
-`http://localhost:3000`
+- Ajuntament de L'Hospitalet.
+- AREA Barcelona / Ajuntament de Barcelona / B:SM.
+- Àrea Metropolitana de Barcelona.
+- BOE para normativa estatal de circulación.
 
-Para GPS real desde móvil conviene desplegar con HTTPS.
+Las páginas se vuelven a comprobar periódicamente desde el servidor. Si una fuente no responde, la app lo indica y no inventa una regla.
+
+## Seguridad de la decisión
+
+Orden de prioridad mostrado al usuario:
+
+1. Señalización física del tramo.
+2. Ayuntamiento u operador municipal.
+3. AMB cuando corresponda.
+4. Normativa estatal DGT/BOE.
+
+ParkBCN es un asistente y no sustituye el tique, permiso o validación oficial.
 
 ## EasyPanel
 
-1. Crear un repo nuevo en GitHub, por ejemplo `parkbcn`.
-2. Subir este proyecto.
-3. En EasyPanel: **Create Service > App > GitHub**.
-4. Elegir el repo.
-5. Build usando el `Dockerfile`.
-6. Puerto interno: `3000`.
-7. Añadir un dominio/subdominio y HTTPS.
-8. Deploy.
+La V2 mantiene el mismo despliegue que V1:
 
-No necesita base de datos en esta V1.
+- Dockerfile en la raíz.
+- Puerto interno `3000`.
+- `npm run build` y `npm start`.
 
-## Limitaciones V1
+Tras subir los archivos a la rama `main`, en EasyPanel basta con **Implementar** de nuevo.
 
-- AMB no representa necesariamente parking libre/no regulado, DUM, exclusivas residentes ni todas las prohibiciones.
-- La detección de zona cercana es orientativa.
-- El reconocimiento de voz depende del navegador.
-- La notificación V1 funciona de forma fiable mientras la PWA sigue activa; push en segundo plano será parte de V2.
-- La señalización física y normativa municipal prevalecen siempre.
+## Limitaciones V2
 
-## V2 recomendada
-
-- PostgreSQL.
-- Cuenta/perfil del conductor y permisos de residente.
-- Reglas municipales y excepciones por fecha/horario.
-- Web Push real en segundo plano.
-- Sincronización de puntos personales con servidor.
-- Integración de Open Data Barcelona y otras fuentes municipales.
-- Motor para responder "¿puedo aparcar aquí ahora?".
+- El perfil de residente necesita que el usuario indique su zona autorizada; la app no puede deducir el alcance legal solo por municipio.
+- Para municipios sin parser específico, se utilizan los datos AMB y las fuentes oficiales generales; las excepciones municipales se irán añadiendo de forma incremental.
+- El aviso local de 15 minutos sigue dependiendo de que el navegador/PWA permanezca operativo. Web Push en segundo plano queda para una versión posterior.
+- El parking libre guardado por el usuario es una referencia personal, no una certificación municipal.

@@ -2,7 +2,7 @@ import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
 export const metadata = {
-  title: "ParkBCN",
+  title: "ParkBCN V2",
   description: "Asistente personal de aparcamiento para Barcelona metropolitana",
   manifest: "/manifest.webmanifest",
   themeColor: "#0b1320"

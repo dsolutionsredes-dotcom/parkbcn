@@ -12,6 +12,35 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const FALLBACK_CENTER = [41.3874, 2.1686];
+const DEFAULT_PROFILE = {
+  residentAuthorized: false,
+  residentMunicipality: "",
+  residentArea: "",
+  plate: ""
+};
+
+const MUNICIPALITIES = [
+  "L'Hospitalet de Llobregat",
+  "Barcelona",
+  "Badalona",
+  "Esplugues de Llobregat",
+  "Santa Coloma de Gramenet",
+  "El Prat de Llobregat",
+  "Sant Joan Despí",
+  "Sant Just Desvern",
+  "Sant Boi de Llobregat",
+  "Castelldefels",
+  "Montgat"
+];
+
+function normalize(value = "") {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[’']/g, "'")
+    .trim();
+}
 
 function boundsToBbox(bounds) {
   const sw = bounds.getSouthWest();
@@ -74,11 +103,178 @@ function nearestFeature(features, lat, lng) {
   return { feature: best, distance: bestDistance };
 }
 
+function zoneKind(feature) {
+  const t = normalize(feature?.properties?.TRAM_TIPUS || "");
+  if (t.includes("verda") || t.includes("verde")) return "green";
+  if (t.includes("blava") || t.includes("azul")) return "blue";
+  if (t.includes("taronja") || t.includes("naranja")) return "orange";
+  if (t.includes("vermella") || t.includes("roja")) return "red";
+  return "other";
+}
+
 function colorFor(feature) {
-  const t = (feature?.properties?.TRAM_TIPUS || "").toLowerCase();
-  if (t.includes("verda") || t.includes("verde")) return "#1f9d55";
-  if (t.includes("blava") || t.includes("azul")) return "#1677ff";
+  const kind = zoneKind(feature);
+  if (kind === "green") return "#1f9d55";
+  if (kind === "blue") return "#1677ff";
+  if (kind === "orange") return "#ef8b17";
+  if (kind === "red") return "#d92d20";
   return "#7b8494";
+}
+
+function municipalityMatches(profileMunicipality, city) {
+  if (!profileMunicipality || !city) return false;
+  const a = normalize(profileMunicipality);
+  const b = normalize(city);
+  if (a.includes("hospitalet") && b.includes("hospitalet")) return true;
+  return a === b || a.includes(b) || b.includes(a);
+}
+
+function activeTemporaryRule(official, feature) {
+  if (!official?.temporaryRules?.length || !feature) return null;
+  const type = normalize(feature.properties?.TRAM_TIPUS || "");
+
+  return (
+    official.temporaryRules.find((rule) => {
+      if (!rule.active) return false;
+      const applies = (rule.appliesTo || []).some((item) =>
+        type.includes(normalize(item).replace("zona ", "")) ||
+        type.includes(normalize(item))
+      );
+      const excluded = (rule.excludes || []).some((item) =>
+        type.includes(normalize(item))
+      );
+      return applies && !excluded;
+    }) || null
+  );
+}
+
+function getDecision(feature, official, profile, confirmedResidentTrams = []) {
+  if (!feature) {
+    return {
+      tone: "unknown",
+      icon: "?",
+      title: "Zona no identificada",
+      detail: "Puede ser libre, DUM, residentes u otra regulación. Revisa la señal del tramo.",
+      noTimer: true
+    };
+  }
+
+  const p = feature.properties || {};
+  const type = normalize(p.TRAM_TIPUS || "");
+  const temporary = activeTemporaryRule(official, feature);
+  const residentType = type.includes("resident") || type.includes("acreditat");
+  const profileCityMatch = municipalityMatches(profile.residentMunicipality, p.CIUTAT);
+  const residentRule = official?.residentRules?.find((rule) => rule.freeAssignedGreen);
+  const tramId = String(p.TRAM_ID || p.OBJECTID || "");
+  const confirmedResidentTram = tramId && confirmedResidentTrams.includes(tramId);
+
+  if (temporary) {
+    return {
+      tone: "good",
+      icon: "✓",
+      title: "Gratis ahora",
+      detail: temporary.summary,
+      noTimer: true,
+      sourceId: temporary.sourceId
+    };
+  }
+
+  if (
+    zoneKind(feature) === "green" &&
+    profile.residentAuthorized &&
+    profileCityMatch &&
+    residentRule
+  ) {
+    if (confirmedResidentTram) {
+      return {
+        tone: "good",
+        icon: "✓",
+        title: "Gratis como residente",
+        detail: residentRule.requiresTicket
+          ? "Este tramo lo confirmaste como parte de tu zona asignada. La bonificación es del 100 %, pero debes obtener/activar el tique de residente cuando corresponda."
+          : "Este tramo lo confirmaste como parte de tu zona asignada y la fuente oficial publica bonificación del 100 %.",
+        noTimer: true,
+        sourceId: residentRule.sourceId
+      };
+    }
+
+    return {
+      tone: "warning",
+      icon: "i",
+      title: "Puede ser gratis para ti",
+      detail: profile.residentArea
+        ? `En L’Hospitalet la zona verde de tu barrio asignado tiene bonificación del 100 %. Confirma en ⓘ si este tramo pertenece a ${profile.residentArea}.`
+        : "En L’Hospitalet la zona verde asignada al residente tiene bonificación del 100 %. Indica tu zona en el perfil y confirma este tramo en ⓘ.",
+      noTimer: false,
+      sourceId: residentRule.sourceId
+    };
+  }
+
+  if (residentType && !profile.residentAuthorized) {
+    return {
+      tone: "danger",
+      icon: "!",
+      title: "Zona de residentes",
+      detail: "No asumas que puedes aparcar aquí sin autorización. Comprueba la señal y tu permiso.",
+      noTimer: true
+    };
+  }
+
+  if (residentType && profile.residentAuthorized && profileCityMatch) {
+    return {
+      tone: "warning",
+      icon: "i",
+      title: "Tu perfil residente coincide",
+      detail: profile.residentArea
+        ? `Confirma que este tramo pertenece a tu zona autorizada (${profile.residentArea}).`
+        : "Confirma que este tramo pertenece exactamente a tu zona de residente autorizada.",
+      noTimer: true
+    };
+  }
+
+  const kind = zoneKind(feature);
+  if (kind === "green" || kind === "blue") {
+    const minutes = maxMinutes(p);
+    return {
+      tone: "info",
+      icon: "P",
+      title: kind === "green" ? "Zona verde regulada" : "Zona azul regulada",
+      detail: minutes
+        ? `Puedes usarla si cumples la regulación del tramo. Máximo publicado por AMB: ${minutes} min.`
+        : "Puedes usarla si cumples la regulación del tramo. Consulta horario, tarifa y señal.",
+      noTimer: !minutes
+    };
+  }
+
+  if (kind === "red") {
+    return {
+      tone: "danger",
+      icon: "!",
+      title: "Zona con regulación especial",
+      detail: "No la trates como aparcamiento normal hasta comprobar la señalización.",
+      noTimer: true
+    };
+  }
+
+  return {
+    tone: "warning",
+    icon: "i",
+    title: "Regulación especial",
+    detail: "Comprueba la señal del tramo antes de aparcar.",
+    noTimer: true
+  };
+}
+
+function formatCheckedAt(value) {
+  if (!value) return "Sin comprobar";
+  try {
+    return new Intl.DateTimeFormat("es-ES", {
+      dateStyle: "short",
+      timeStyle: "short"
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
 }
 
 function MapController({ onViewport, onMapReady }) {
@@ -112,14 +308,29 @@ export default function ParkingMap() {
   const [savedFree, setSavedFree] = useState([]);
   const [parked, setParked] = useState(null);
   const [now, setNow] = useState(Date.now());
+  const [official, setOfficial] = useState(null);
+  const [officialLoading, setOfficialLoading] = useState(false);
+  const [profile, setProfile] = useState(DEFAULT_PROFILE);
+  const [confirmedResidentTrams, setConfirmedResidentTrams] = useState([]);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [driveMode, setDriveMode] = useState(false);
+  const [wakeActive, setWakeActive] = useState(false);
   const recognitionRef = useRef(null);
   const lastBboxRef = useRef("");
+  const watchIdRef = useRef(null);
+  const wakeLockRef = useRef(null);
 
   useEffect(() => {
     const saved = JSON.parse(localStorage.getItem("parkbcn-free") || "[]");
     const p = JSON.parse(localStorage.getItem("parkbcn-active") || "null");
+    const userProfile = JSON.parse(localStorage.getItem("parkbcn-profile") || "null");
+    const confirmedTrams = JSON.parse(localStorage.getItem("parkbcn-resident-trams") || "[]");
     setSavedFree(saved);
     setParked(p);
+    setConfirmedResidentTrams(Array.isArray(confirmedTrams) ? confirmedTrams : []);
+    if (userProfile) setProfile({ ...DEFAULT_PROFILE, ...userProfile });
 
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -145,6 +356,24 @@ export default function ParkingMap() {
     }
   }, []);
 
+  const applyLocation = useCallback(
+    (pos, follow = false) => {
+      const next = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy
+      };
+      setLocation(next);
+      setStatus(`GPS ±${Math.round(pos.coords.accuracy)} m`);
+      if (mapRef && follow) {
+        mapRef.setView([next.lat, next.lng], Math.max(mapRef.getZoom(), 16), {
+          animate: true
+        });
+      }
+    },
+    [mapRef]
+  );
+
   const locate = useCallback(() => {
     if (!navigator.geolocation) {
       setStatus("Este navegador no ofrece geolocalización.");
@@ -153,24 +382,60 @@ export default function ParkingMap() {
 
     setStatus("Buscando tu ubicación…");
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const next = {
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          accuracy: pos.coords.accuracy
-        };
-        setLocation(next);
-        setStatus(`GPS ±${Math.round(pos.coords.accuracy)} m`);
-        if (mapRef) mapRef.flyTo([next.lat, next.lng], 17, { duration: 0.8 });
-      },
+      (pos) => applyLocation(pos, true),
       () => setStatus("Activa el permiso de ubicación."),
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
     );
-  }, [mapRef]);
+  }, [applyLocation]);
 
   useEffect(() => {
     if (mapRef) locate();
   }, [mapRef, locate]);
+
+  const requestWakeLock = useCallback(async () => {
+    if (!("wakeLock" in navigator) || document.visibilityState !== "visible") {
+      setWakeActive(false);
+      return;
+    }
+    try {
+      wakeLockRef.current = await navigator.wakeLock.request("screen");
+      setWakeActive(true);
+      wakeLockRef.current.addEventListener("release", () => setWakeActive(false));
+    } catch {
+      setWakeActive(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!driveMode) {
+      if (watchIdRef.current !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release().catch(() => {});
+        wakeLockRef.current = null;
+      }
+      setWakeActive(false);
+      return;
+    }
+
+    requestWakeLock();
+    if (navigator.geolocation && watchIdRef.current === null) {
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        (pos) => applyLocation(pos, true),
+        () => setStatus("No puedo seguir tu GPS. Revisa permisos."),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 2500 }
+      );
+    }
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible" && driveMode) requestWakeLock();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [driveMode, requestWakeLock, applyLocation]);
 
   const currentNearest = useMemo(() => {
     if (!location) return null;
@@ -182,6 +447,75 @@ export default function ParkingMap() {
     (currentNearest && currentNearest.distance <= 55
       ? currentNearest.feature
       : null);
+
+  const p = activeZone?.properties || {};
+
+  useEffect(() => {
+    const city = p.CIUTAT;
+    if (!city) {
+      setOfficial(null);
+      return;
+    }
+
+    let cancelled = false;
+    setOfficialLoading(true);
+    fetch(`/api/official?city=${encodeURIComponent(city)}`)
+      .then((response) => response.json())
+      .then((data) => {
+        if (!cancelled) setOfficial(data);
+      })
+      .catch(() => {
+        if (!cancelled) setOfficial(null);
+      })
+      .finally(() => {
+        if (!cancelled) setOfficialLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [p.CIUTAT]);
+
+  const decision = useMemo(
+    () => getDecision(activeZone, official, profile, confirmedResidentTrams),
+    [activeZone, official, profile, confirmedResidentTrams]
+  );
+
+  const activeTramId = String(p.TRAM_ID || p.OBJECTID || "");
+  const residentRule = official?.residentRules?.find((rule) => rule.freeAssignedGreen);
+  const canConfirmResidentTram = Boolean(
+    activeZone &&
+    activeTramId &&
+    zoneKind(activeZone) === "green" &&
+    profile.residentAuthorized &&
+    municipalityMatches(profile.residentMunicipality, p.CIUTAT) &&
+    residentRule
+  );
+  const isConfirmedResidentTram =
+    canConfirmResidentTram && confirmedResidentTrams.includes(activeTramId);
+
+  const toggleResidentTram = useCallback(() => {
+    if (!activeTramId) return;
+    const next = confirmedResidentTrams.includes(activeTramId)
+      ? confirmedResidentTrams.filter((id) => id !== activeTramId)
+      : [...confirmedResidentTrams, activeTramId];
+    setConfirmedResidentTrams(next);
+    localStorage.setItem("parkbcn-resident-trams", JSON.stringify(next));
+  }, [activeTramId, confirmedResidentTrams]);
+
+  const saveProfile = useCallback((event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const next = {
+      residentAuthorized: form.get("residentAuthorized") === "on",
+      residentMunicipality: String(form.get("residentMunicipality") || ""),
+      residentArea: String(form.get("residentArea") || "").trim(),
+      plate: String(form.get("plate") || "").trim().toUpperCase()
+    };
+    setProfile(next);
+    localStorage.setItem("parkbcn-profile", JSON.stringify(next));
+    setProfileOpen(false);
+  }, []);
 
   const saveFreeHere = useCallback(() => {
     if (!location) {
@@ -198,21 +532,29 @@ export default function ParkingMap() {
     const next = [...savedFree, point];
     setSavedFree(next);
     localStorage.setItem("parkbcn-free", JSON.stringify(next));
-    setVoiceText("Parking libre guardado en tu mapa.");
+    setVoiceText("Parking libre guardado. Sirve como referencia personal; confirma siempre la señal al volver.");
   }, [location, locate, savedFree]);
 
   const startParking = useCallback(() => {
+    if (parked) {
+      setVoiceText("Ya tienes un aparcamiento activo.");
+      return;
+    }
     if (!location) {
       locate();
       return;
     }
 
-    const p = activeZone?.properties || {};
-    const minutes = maxMinutes(p);
+    const minutes = decision.noTimer ? 0 : maxMinutes(p);
     const active = {
       startedAt: Date.now(),
       lat: location.lat,
       lng: location.lng,
+      decision: {
+        title: decision.title,
+        detail: decision.detail,
+        tone: decision.tone
+      },
       zone: activeZone
         ? {
             city: p.CIUTAT || "",
@@ -229,20 +571,22 @@ export default function ParkingMap() {
 
     setParked(active);
     localStorage.setItem("parkbcn-active", JSON.stringify(active));
+    setDriveMode(false);
     setVoiceText(
-      activeZone
-        ? "Aparcamiento registrado. Comprueba la señal física antes de dejar el coche."
-        : "Ubicación guardada. No detecto una zona regulada AMB a menos de 55 metros."
+      minutes
+        ? `Aparcamiento registrado. Contador según el máximo publicado: ${minutes} min.`
+        : "Aparcamiento registrado sin contador automático para esta condición."
     );
 
     if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission().catch(() => {});
     }
-  }, [location, activeZone, locate]);
+  }, [parked, location, locate, decision, p, activeZone]);
 
   const clearParking = useCallback(() => {
     setParked(null);
     localStorage.removeItem("parkbcn-active");
+    setVoiceText("Aparcamiento finalizado.");
   }, []);
 
   useEffect(() => {
@@ -281,13 +625,7 @@ export default function ParkingMap() {
       const text = event.results[0][0].transcript.toLowerCase();
       setVoiceText(`“${text}”`);
 
-      if (
-        text.includes("he aparcado") ||
-        text.includes("estacioné") ||
-        text.includes("estacione") ||
-        text.includes("aparqué") ||
-        text.includes("aparque")
-      ) {
+      if (text.includes("he aparcado") || text.includes("aparqué") || text.includes("aparque")) {
         startParking();
       } else if (
         text.includes("parking libre") ||
@@ -295,6 +633,12 @@ export default function ParkingMap() {
         text.includes("zona blanca")
       ) {
         saveFreeHere();
+      } else if (text.includes("modo conducción") || text.includes("modo conduccion")) {
+        setDriveMode(true);
+      } else if (text.includes("parar conducción") || text.includes("parar conduccion")) {
+        setDriveMode(false);
+      } else if (text.includes("más información") || text.includes("mas informacion")) {
+        setInfoOpen(true);
       } else if (
         text.includes("mi ubicación") ||
         text.includes("mi ubicacion") ||
@@ -310,10 +654,7 @@ export default function ParkingMap() {
     recognition.start();
   }, [locate, saveFreeHere, startParking]);
 
-  const remaining = parked?.endsAt
-    ? Math.max(0, parked.endsAt - now)
-    : null;
-
+  const remaining = parked?.endsAt ? Math.max(0, parked.endsAt - now) : null;
   const remainingText =
     remaining === null
       ? ""
@@ -321,20 +662,13 @@ export default function ParkingMap() {
           Math.floor((remaining % 3600000) / 60000)
         ).padStart(2, "0")}:${String(Math.floor((remaining % 60000) / 1000)).padStart(2, "0")}`;
 
-  const p = activeZone?.properties || {};
   const distance =
     currentNearest?.feature === activeZone ? Math.round(currentNearest.distance) : null;
 
   return (
     <main className="appShell">
-      <MapContainer
-        center={FALLBACK_CENTER}
-        zoom={13}
-        zoomControl={false}
-        className="map"
-      >
+      <MapContainer center={FALLBACK_CENTER} zoom={13} zoomControl={false} className="map">
         <MapController onViewport={fetchZones} onMapReady={setMapRef} />
-
         <TileLayer
           attribution='&copy; OpenStreetMap contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -387,20 +721,39 @@ export default function ParkingMap() {
 
       <header className="topBar">
         <div>
-          <div className="brand">ParkBCN <span>V1</span></div>
+          <div className="brand">ParkBCN <span>V2</span></div>
           <div className="status">
             {loadingZones ? "Actualizando zonas…" : status}
           </div>
         </div>
-        <button className="roundButton" onClick={locate} aria-label="Mi ubicación">
-          ◎
-        </button>
+        <div className="topActions">
+          <button
+            className={`roundButton ${driveMode ? "active" : ""}`}
+            onClick={() => setDriveMode((value) => !value)}
+            aria-label="Modo conducción"
+            title="Modo conducción"
+          >
+            🚘
+          </button>
+          <button className="roundButton" onClick={locate} aria-label="Mi ubicación">
+            ◎
+          </button>
+        </div>
       </header>
+
+      {driveMode && (
+        <div className="drivePill">
+          <span>● Modo conducción</span>
+          <small>{wakeActive ? "pantalla activa" : "seguimiento GPS"}</small>
+        </div>
+      )}
 
       <div className="legend">
         <span><i className="dot green" /> Verde</span>
         <span><i className="dot blue" /> Azul</span>
-        <span><i className="dot white" /> Libre guardado</span>
+        <button className="legendInfo" onClick={() => setGuideOpen(true)} aria-label="Guía de líneas">
+          ⓘ
+        </button>
       </div>
 
       <section className="bottomSheet">
@@ -408,20 +761,30 @@ export default function ParkingMap() {
           <div className="activeParking">
             <div>
               <small>APARCAMIENTO ACTIVO</small>
-              <strong>{remaining !== null ? remainingText : "Ubicación guardada"}</strong>
+              <strong>{remaining !== null ? remainingText : "Sin contador"}</strong>
+              <span>{parked.decision?.title || parked.zone?.type || "Ubicación guardada"}</span>
             </div>
             <button onClick={clearParking}>Finalizar</button>
           </div>
         )}
 
+        <div className={`decisionCard ${decision.tone}`}>
+          <div className="decisionIcon">{decision.icon}</div>
+          <div className="decisionCopy">
+            <small>RESULTADO ORIENTATIVO</small>
+            <strong>{decision.title}</strong>
+            <p>{decision.detail}</p>
+          </div>
+          <button className="infoButton" onClick={() => setInfoOpen(true)} aria-label="Más información">
+            ⓘ
+          </button>
+        </div>
+
         <div className="zoneCard">
           {activeZone ? (
             <>
               <div className="zoneHeader">
-                <span
-                  className="zoneBadge"
-                  style={{ background: colorFor(activeZone) }}
-                >
+                <span className="zoneBadge" style={{ background: colorFor(activeZone) }}>
                   {p.TRAM_TIPUS || "Zona regulada"}
                 </span>
                 {distance !== null && <span className="distance">≈ {distance} m</span>}
@@ -442,7 +805,7 @@ export default function ParkingMap() {
               </div>
               <h2>Comprueba la señalización</h2>
               <p className="city">
-                Puede ser aparcamiento libre, residentes, DUM u otra regulación no incluida en esta capa.
+                AMB puede no incluir parking libre, DUM, residentes exclusivos u otras restricciones.
               </p>
             </>
           )}
@@ -450,23 +813,186 @@ export default function ParkingMap() {
 
         {voiceText && <div className="voiceText">{voiceText}</div>}
 
-        <div className="actions">
-          <button className="primaryAction" onClick={startParking}>
-            🚗 He aparcado aquí
-          </button>
-          <button className="micAction" onClick={listen} aria-label="Comando de voz">
-            🎤
-          </button>
+        {!parked ? (
+          <div className="actions">
+            <button className="primaryAction" onClick={startParking}>
+              🚗 He aparcado aquí
+            </button>
+            <button className="micAction" onClick={listen} aria-label="Comando de voz">
+              🎤
+            </button>
+          </div>
+        ) : (
+          <div className="actions parkedActions">
+            <button className="secondaryAction" onClick={() => setInfoOpen(true)}>
+              ⓘ Ver regla actual
+            </button>
+            <button className="micAction" onClick={listen} aria-label="Comando de voz">
+              🎤
+            </button>
+          </div>
+        )}
+
+        <div className="secondaryRow">
+          <button onClick={saveFreeHere}>＋ Guardar parking libre</button>
+          <button onClick={() => setProfileOpen(true)}>👤 Perfil</button>
         </div>
 
-        <button className="freeAction" onClick={saveFreeHere}>
-          + Marcar parking libre aquí
-        </button>
-
         <p className="legalNote">
-          V1 orientativa. Los datos AMB ayudan a identificar zonas reguladas; la señalización física prevalece.
+          Señalización física y normativa vigente prevalecen. ParkBCN resume datos oficiales y tus referencias personales.
         </p>
       </section>
+
+      {profileOpen && (
+        <div className="modalBackdrop" role="presentation" onMouseDown={() => setProfileOpen(false)}>
+          <div className="modalCard" role="dialog" aria-modal="true" aria-label="Perfil de residente" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modalHeader">
+              <div>
+                <small>PERFIL</small>
+                <h3>Residencia y vehículo</h3>
+              </div>
+              <button onClick={() => setProfileOpen(false)} aria-label="Cerrar">×</button>
+            </div>
+
+            <form onSubmit={saveProfile} className="profileForm">
+              <label className="switchRow">
+                <input type="checkbox" name="residentAuthorized" defaultChecked={profile.residentAuthorized} />
+                <span>Tengo autorización municipal de residente</span>
+              </label>
+
+              <label>
+                <span>Municipio de mi autorización</span>
+                <select name="residentMunicipality" defaultValue={profile.residentMunicipality}>
+                  <option value="">Seleccionar…</option>
+                  {MUNICIPALITIES.map((item) => (
+                    <option key={item} value={item}>{item}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Zona / barrio autorizado</span>
+                <input
+                  name="residentArea"
+                  defaultValue={profile.residentArea}
+                  placeholder="Ej. Collblanc-La Torrassa"
+                />
+                <small>La app no asumirá que tu permiso sirve para todo el municipio.</small>
+              </label>
+
+              <label>
+                <span>Matrícula (opcional)</span>
+                <input name="plate" defaultValue={profile.plate} placeholder="1234ABC" autoCapitalize="characters" />
+              </label>
+
+              <button className="saveButton" type="submit">Guardar perfil</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {infoOpen && (
+        <div className="modalBackdrop" role="presentation" onMouseDown={() => setInfoOpen(false)}>
+          <div className="modalCard infoModal" role="dialog" aria-modal="true" aria-label="Información oficial" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modalHeader">
+              <div>
+                <small>MÁS INFO</small>
+                <h3>{p.TRAM_TIPUS || "Regla de estacionamiento"}</h3>
+              </div>
+              <button onClick={() => setInfoOpen(false)} aria-label="Cerrar">×</button>
+            </div>
+
+            <div className={`modalDecision ${decision.tone}`}>
+              <strong>{decision.title}</strong>
+              <p>{decision.detail}</p>
+            </div>
+
+            {profile.residentAuthorized && (
+              <div className="profileHint">
+                <b>Tu perfil:</b> {profile.residentMunicipality || "municipio sin definir"}
+                {profile.residentArea ? ` · ${profile.residentArea}` : ""}
+              </div>
+            )}
+
+            {canConfirmResidentTram && (
+              <button
+                type="button"
+                className={`residentConfirm ${isConfirmedResidentTram ? "confirmed" : ""}`}
+                onClick={toggleResidentTram}
+              >
+                {isConfirmedResidentTram
+                  ? "✓ Este tramo está confirmado como mi zona residente"
+                  : "Confirmar que este tramo pertenece a mi zona residente"}
+              </button>
+            )}
+
+            <div className="sourceSection">
+              <div className="sourceTitle">
+                <h4>Fuentes oficiales</h4>
+                <span>{officialLoading ? "Comprobando…" : `Revisado ${formatCheckedAt(official?.checkedAt)}`}</span>
+              </div>
+
+              {official?.sources?.length ? (
+                official.sources.map((source) => (
+                  <a key={source.id} className="sourceLink" href={source.url} target="_blank" rel="noreferrer">
+                    <div>
+                      <strong>{source.name}</strong>
+                      <small>{source.authority}</small>
+                    </div>
+                    <span className={source.available ? "sourceOk" : "sourceOff"}>
+                      {source.available ? "Oficial ✓" : "No disponible"}
+                    </span>
+                  </a>
+                ))
+              ) : (
+                <p className="mutedText">No se pudo comprobar una fuente adicional ahora mismo.</p>
+              )}
+            </div>
+
+            {official?.facts?.length > 0 && (
+              <div className="factList">
+                {official.facts.map((fact) => (
+                  <div key={fact.id}>
+                    <strong>{fact.title}</strong>
+                    <p>{fact.text}</p>
+                    {fact.publishedDate && <small>Publicado: {fact.publishedDate}</small>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="priorityNote">
+              <b>Orden de seguridad:</b> señal del tramo → ayuntamiento/operador → AMB → DGT/BOE.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {guideOpen && (
+        <div className="modalBackdrop" role="presentation" onMouseDown={() => setGuideOpen(false)}>
+          <div className="modalCard guideModal" role="dialog" aria-modal="true" aria-label="Guía de marcas" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modalHeader">
+              <div>
+                <small>GUÍA RÁPIDA</small>
+                <h3>Colores y marcas</h3>
+              </div>
+              <button onClick={() => setGuideOpen(false)} aria-label="Cerrar">×</button>
+            </div>
+
+            <div className="markGuide">
+              <div><i className="lineSample blueLine" /><span><b>Azul</b><small>Normalmente regulada/limitada. Mira horario y tarifa.</small></span></div>
+              <div><i className="lineSample greenLine" /><span><b>Verde</b><small>Regla municipal; suele distinguir residentes/no residentes.</small></span></div>
+              <div><i className="lineSample whiteLine" /><span><b>Blanca</b><small>No significa siempre “gratis”: texto, pictograma o señal pueden restringirla.</small></span></div>
+              <div><i className="lineSample yellowLine" /><span><b>Amarilla</b><small>Puede indicar prohibición o reserva. No aparques sin comprobar la señal.</small></span></div>
+              <div><i className="zigzagSample" /><span><b>Zigzag / marcas especiales</b><small>Reserva de uso específico. Consulta señal vertical.</small></span></div>
+            </div>
+
+            <button className="saveButton" type="button" onClick={() => { setGuideOpen(false); setInfoOpen(true); }}>
+              Ver fuentes oficiales
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
