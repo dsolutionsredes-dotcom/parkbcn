@@ -164,7 +164,7 @@ function getDecision(feature, official, profile, confirmedResidentTrams = []) {
   const temporary = activeTemporaryRule(official, feature);
   const residentType = type.includes("resident") || type.includes("acreditat");
   const profileCityMatch = municipalityMatches(profile.residentMunicipality, p.CIUTAT);
-  const residentRule = official?.residentRules?.find((rule) => rule.freeAssignedGreen);
+  const residentRule = official?.residentRules?.find((rule) => rule.type === "resident-green");
   const tramId = String(p.TRAM_ID || p.OBJECTID || "");
   const confirmedResidentTram = tramId && confirmedResidentTrams.includes(tramId);
 
@@ -186,13 +186,16 @@ function getDecision(feature, official, profile, confirmedResidentTrams = []) {
     residentRule
   ) {
     if (confirmedResidentTram) {
+      const free = residentRule.freeAssignedGreen;
       return {
         tone: "good",
         icon: "✓",
-        title: "Gratis como residente",
-        detail: residentRule.requiresTicket
-          ? "Este tramo lo confirmaste como parte de tu zona asignada. La bonificación es del 100 %, pero debes obtener/activar el tique de residente cuando corresponda."
-          : "Este tramo lo confirmaste como parte de tu zona asignada y la fuente oficial publica bonificación del 100 %.",
+        title: free ? "Gratis como residente" : "Tarifa de residente",
+        detail: free
+          ? (residentRule.requiresTicket
+              ? "Este tramo está confirmado como parte de tu zona asignada. La bonificación es del 100 %, pero debes obtener/activar el tique gratuito cuando corresponda."
+              : "Este tramo está confirmado como parte de tu zona asignada y la fuente oficial publica bonificación del 100 %.")
+          : `Este tramo está confirmado como parte de tu zona asignada. Tarifa oficial de residente: ${residentRule.residentDailyPrice || "reducida"}. Debes disponer del comprobante correspondiente.`,
         noTimer: true,
         sourceId: residentRule.sourceId
       };
@@ -201,10 +204,10 @@ function getDecision(feature, official, profile, confirmedResidentTrams = []) {
     return {
       tone: "warning",
       icon: "i",
-      title: "Puede ser gratis para ti",
+      title: residentRule.freeAssignedGreen ? "Puede ser gratis para ti" : "Puede aplicarte tarifa de residente",
       detail: profile.residentArea
-        ? `En L’Hospitalet la zona verde de tu barrio asignado tiene bonificación del 100 %. Confirma en ⓘ si este tramo pertenece a ${profile.residentArea}.`
-        : "En L’Hospitalet la zona verde asignada al residente tiene bonificación del 100 %. Indica tu zona en el perfil y confirma este tramo en ⓘ.",
+        ? `La ventaja de residente solo se aplica en tu zona asignada. Confirma en ⓘ si este tramo pertenece a ${profile.residentArea}.`
+        : "La ventaja de residente solo se aplica en tu zona asignada. Indica tu zona en Mi perfil y confirma el tramo en ⓘ.",
       noTimer: false,
       sourceId: residentRule.sourceId
     };
@@ -317,7 +320,9 @@ export default function ParkingMap() {
   const [guideOpen, setGuideOpen] = useState(false);
   const [driveMode, setDriveMode] = useState(false);
   const [wakeActive, setWakeActive] = useState(false);
+  const [voiceActive, setVoiceActive] = useState(false);
   const recognitionRef = useRef(null);
+  const voiceTimerRef = useRef(null);
   const lastBboxRef = useRef("");
   const watchIdRef = useRef(null);
   const wakeLockRef = useRef(null);
@@ -458,8 +463,9 @@ export default function ParkingMap() {
     }
 
     let cancelled = false;
+    setOfficial(null);
     setOfficialLoading(true);
-    fetch(`/api/official?city=${encodeURIComponent(city)}`)
+    fetch(`/api/official?city=${encodeURIComponent(city)}&type=${encodeURIComponent(p.TRAM_TIPUS || "")}&resident=${profile.residentAuthorized ? "1" : "0"}`)
       .then((response) => response.json())
       .then((data) => {
         if (!cancelled) setOfficial(data);
@@ -474,7 +480,7 @@ export default function ParkingMap() {
     return () => {
       cancelled = true;
     };
-  }, [p.CIUTAT]);
+  }, [p.CIUTAT, p.TRAM_TIPUS, profile.residentAuthorized]);
 
   const decision = useMemo(
     () => getDecision(activeZone, official, profile, confirmedResidentTrams),
@@ -482,7 +488,7 @@ export default function ParkingMap() {
   );
 
   const activeTramId = String(p.TRAM_ID || p.OBJECTID || "");
-  const residentRule = official?.residentRules?.find((rule) => rule.freeAssignedGreen);
+  const residentRule = official?.residentRules?.find((rule) => rule.type === "resident-green");
   const canConfirmResidentTram = Boolean(
     activeZone &&
     activeTramId &&
@@ -604,7 +610,34 @@ export default function ParkingMap() {
     }
   }, [now, parked]);
 
+  const stopListening = useCallback(() => {
+    if (voiceTimerRef.current) {
+      clearTimeout(voiceTimerRef.current);
+      voiceTimerRef.current = null;
+    }
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch {}
+      recognitionRef.current = null;
+    }
+    setVoiceActive(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (voiceTimerRef.current) clearTimeout(voiceTimerRef.current);
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch {}
+      }
+    };
+  }, []);
+
   const listen = useCallback(() => {
+    if (voiceActive) {
+      stopListening();
+      setVoiceText("Micrófono detenido.");
+      return;
+    }
+
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -617,10 +650,30 @@ export default function ParkingMap() {
     recognition.lang = "es-ES";
     recognition.interimResults = false;
     recognition.continuous = false;
+    recognition.maxAlternatives = 1;
     recognitionRef.current = recognition;
 
-    recognition.onstart = () => setVoiceText("Escuchando…");
-    recognition.onerror = () => setVoiceText("No pude entender el comando.");
+    const finish = () => {
+      if (voiceTimerRef.current) {
+        clearTimeout(voiceTimerRef.current);
+        voiceTimerRef.current = null;
+      }
+      recognitionRef.current = null;
+      setVoiceActive(false);
+    };
+
+    recognition.onstart = () => {
+      setVoiceActive(true);
+      setVoiceText("Escuchando… toca el micrófono para detener.");
+      voiceTimerRef.current = setTimeout(() => {
+        try { recognition.stop(); } catch {}
+      }, 8000);
+    };
+    recognition.onend = finish;
+    recognition.onerror = () => {
+      setVoiceText("Micrófono detenido. No pude entender el comando.");
+      finish();
+    };
     recognition.onresult = (event) => {
       const text = event.results[0][0].transcript.toLowerCase();
       setVoiceText(`“${text}”`);
@@ -649,10 +702,12 @@ export default function ParkingMap() {
       } else {
         setVoiceText(`Comando no reconocido: “${text}”`);
       }
+
+      try { recognition.stop(); } catch {}
     };
 
-    recognition.start();
-  }, [locate, saveFreeHere, startParking]);
+    try { recognition.start(); } catch { finish(); }
+  }, [voiceActive, stopListening, locate, saveFreeHere, startParking]);
 
   const remaining = parked?.endsAt ? Math.max(0, parked.endsAt - now) : null;
   const remainingText =
@@ -721,7 +776,7 @@ export default function ParkingMap() {
 
       <header className="topBar">
         <div>
-          <div className="brand">ParkBCN <span>V2</span></div>
+          <div className="brand">ParkBCN <span>V2.1</span></div>
           <div className="status">
             {loadingZones ? "Actualizando zonas…" : status}
           </div>
@@ -818,8 +873,8 @@ export default function ParkingMap() {
             <button className="primaryAction" onClick={startParking}>
               🚗 He aparcado aquí
             </button>
-            <button className="micAction" onClick={listen} aria-label="Comando de voz">
-              🎤
+            <button className={`micAction ${voiceActive ? "listening" : ""}`} onClick={listen} aria-label={voiceActive ? "Detener micrófono" : "Comando de voz"}>
+              {voiceActive ? "■" : "🎤"}
             </button>
           </div>
         ) : (
@@ -827,15 +882,15 @@ export default function ParkingMap() {
             <button className="secondaryAction" onClick={() => setInfoOpen(true)}>
               ⓘ Ver regla actual
             </button>
-            <button className="micAction" onClick={listen} aria-label="Comando de voz">
-              🎤
+            <button className={`micAction ${voiceActive ? "listening" : ""}`} onClick={listen} aria-label={voiceActive ? "Detener micrófono" : "Comando de voz"}>
+              {voiceActive ? "■" : "🎤"}
             </button>
           </div>
         )}
 
         <div className="secondaryRow">
           <button onClick={saveFreeHere}>＋ Guardar parking libre</button>
-          <button onClick={() => setProfileOpen(true)}>👤 Perfil</button>
+          <button onClick={() => setProfileOpen(true)}>👤 Mi perfil</button>
         </div>
 
         <p className="legalNote">
@@ -848,11 +903,13 @@ export default function ParkingMap() {
           <div className="modalCard" role="dialog" aria-modal="true" aria-label="Perfil de residente" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modalHeader">
               <div>
-                <small>PERFIL</small>
+                <small>MI PERFIL</small>
                 <h3>Residencia y vehículo</h3>
               </div>
               <button onClick={() => setProfileOpen(false)} aria-label="Cerrar">×</button>
             </div>
+
+            <p className="profileIntro">Este es el único perfil activo de este dispositivo. Al editarlo, reemplazas tus datos actuales; no se crea otra persona.</p>
 
             <form onSubmit={saveProfile} className="profileForm">
               <label className="switchRow">
@@ -926,38 +983,43 @@ export default function ParkingMap() {
               </button>
             )}
 
-            <div className="sourceSection">
-              <div className="sourceTitle">
-                <h4>Fuentes oficiales</h4>
-                <span>{officialLoading ? "Comprobando…" : `Revisado ${formatCheckedAt(official?.checkedAt)}`}</span>
-              </div>
+            {official?.sources?.length > 0 && (
+              <div className="sourceSection">
+                <div className="sourceTitle">
+                  <h4>Fuentes oficiales de esta regla</h4>
+                  <span>{officialLoading ? "Comprobando…" : `Comprobado ${formatCheckedAt(official?.checkedAt)}`}</span>
+                </div>
 
-              {official?.sources?.length ? (
-                official.sources.map((source) => (
+                {official.sources.map((source) => (
                   <a key={source.id} className="sourceLink" href={source.url} target="_blank" rel="noreferrer">
                     <div>
                       <strong>{source.name}</strong>
-                      <small>{source.authority}</small>
+                      <small>{source.role || source.authority}</small>
+                      {source.publishedDate && <em>Publicado: {source.publishedDate}</em>}
                     </div>
-                    <span className={source.available ? "sourceOk" : "sourceOff"}>
-                      {source.available ? "Oficial ✓" : "No disponible"}
-                    </span>
+                    <span className="sourceOk">Abrir ↗</span>
                   </a>
-                ))
-              ) : (
-                <p className="mutedText">No se pudo comprobar una fuente adicional ahora mismo.</p>
-              )}
-            </div>
+                ))}
+              </div>
+            )}
 
             {official?.facts?.length > 0 && (
               <div className="factList">
-                {official.facts.map((fact) => (
-                  <div key={fact.id}>
-                    <strong>{fact.title}</strong>
-                    <p>{fact.text}</p>
-                    {fact.publishedDate && <small>Publicado: {fact.publishedDate}</small>}
-                  </div>
-                ))}
+                {official.facts.map((fact) => {
+                  const factSource = official.sources?.find((source) => source.id === fact.sourceId);
+                  return (
+                    <div key={fact.id}>
+                      <strong>{fact.title}</strong>
+                      <p>{fact.text}</p>
+                      <div className="factMeta">
+                        {fact.publishedDate && <small>Publicado: {fact.publishedDate}</small>}
+                        {factSource && (
+                          <a href={factSource.url} target="_blank" rel="noreferrer">Ver fuente oficial ↗</a>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -987,9 +1049,9 @@ export default function ParkingMap() {
               <div><i className="zigzagSample" /><span><b>Zigzag / marcas especiales</b><small>Reserva de uso específico. Consulta señal vertical.</small></span></div>
             </div>
 
-            <button className="saveButton" type="button" onClick={() => { setGuideOpen(false); setInfoOpen(true); }}>
-              Ver fuentes oficiales
-            </button>
+            <a className="guideSource" href="https://www.boe.es/buscar/act.php?id=BOE-A-2003-23514#a171" target="_blank" rel="noreferrer">
+              BOE · Reglamento General de Circulación, marcas viales ↗
+            </a>
           </div>
         </div>
       )}

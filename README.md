@@ -1,66 +1,57 @@
-# ParkBCN V2
+# ParkBCN V2.1
 
-PWA móvil para consultar estacionamiento regulado en Barcelona metropolitana con datos GIS de AMB y comprobación de fuentes oficiales.
+Corrección de V2 centrada en fiabilidad de fuentes, micrófono y legibilidad.
 
-## Qué añade V2
+## Cambios principales
 
-- Perfil local de residente: municipio, zona/barrio autorizado y matrícula opcional.
-- La app no presupone que ser residente de un municipio te autorice en todas sus zonas. En L'Hospitalet puede confirmarse un tramo conocido como parte de la zona residente asignada.
-- Panel de decisión resumida: gratis ahora / regulado / residentes / regulación especial / no identificado.
-- Fuentes oficiales en una ventana **ⓘ Más info** con enlace directo y fecha de comprobación.
-- Consulta en vivo del Ayuntamiento de L'Hospitalet, AREA Barcelona, AMB y BOE según el municipio.
-- Detección de excepciones temporales publicadas en la fuente oficial, empezando por la gratuidad de agosto de L'Hospitalet cuando está vigente.
-- Modo conducción con seguimiento GPS y Screen Wake Lock cuando el navegador lo permite.
-- Al iniciar un aparcamiento desaparece el botón **He aparcado aquí** para evitar reiniciar el contador accidentalmente.
-- Guía rápida de colores y marcas mediante **ⓘ**.
-- Colores AMB ampliados: verde, azul, naranja y rojo.
-- Parking libre personal sigue guardándose como referencia local.
+- **Fuentes oficiales contextuales:** solo se muestran enlaces que el servidor pudo abrir y cuyo contenido coincide con la regla esperada.
+- **Sin “No disponible”:** una fuente caída, redirigida a un índice genérico o que requiera autenticación simplemente no aparece como hipervínculo.
+- **L’Hospitalet:** se eliminó el enlace genérico al índice municipal. Se usan páginas directas de Zones AIRE / La Farga GEM (operador municipal), la publicación directa de gratuidad de agosto y la publicación específica de residentes.
+- **Barcelona:** enlace directo a AREA Verde, AREA Azul o Exclusivas Residentes según el tipo de tramo.
+- **Badalona:** enlace directo a Engestur para zona azul y a la publicación municipal de Artigues cuando corresponde a zona verde.
+- **Resto de municipios:** si no hay una fuente municipal específica validada, se muestra únicamente la fuente AMB pertinente; no se inventa un enlace local.
+- **Micrófono tap-to-talk:** nunca queda escuchando de forma continua. Se detiene tras el resultado, al volver a pulsar o automáticamente a los 8 segundos.
+- **Mi perfil:** existe un solo perfil activo por dispositivo. Editarlo reemplaza el perfil actual; no crea otra persona.
+- **Texto más grande:** se aumentó la legibilidad de tarjetas, reglas, fuentes y modales.
+- **Guía de marcas:** el enlace estatal lleva directamente al Reglamento General de Circulación en BOE.
 
-## Datos oficiales
+## Fuentes base
 
-### Geometría de zonas reguladas
+### Datos cartográficos
 
 AMB ArcGIS:
 `https://ide.amb.cat/geoserveis/rest/services/plataforma_metropolitana_aparcament/MapServer/0`
 
-Campos usados:
-`CIUTAT`, `TRAM`, `TRAM_ID`, `TRAM_TIPUS`, `TARIFA`, `HORARI`, `PREU_FRACCIO`, `TEMPS_MAX_HORES`, `TEMPS_MAX_MINUTS`, `PLACES`.
+### L’Hospitalet
 
-### Fuentes de reglas
+- Zones AIRE: `https://www.lafarga.com/corporatiu/estacionaments-regulats-hospitalet/`
+- Gratuidad agosto: `https://www.lafarga.com/corporatiu/gratuitat-de-la-zona-blava-i-verda-durant-lagost/`
+- Residentes zona verde: `https://www.lafarga.com/corporatiu/no-caldra-distintiu-per-aparcar-a-les-zones-verdes-com-a-resident/`
 
-El endpoint `/api/official?city=...` consulta una lista cerrada de fuentes oficiales para evitar depender de blogs o agregadores:
+### Barcelona
 
-- Ajuntament de L'Hospitalet.
-- AREA Barcelona / Ajuntament de Barcelona / B:SM.
-- Àrea Metropolitana de Barcelona.
-- BOE para normativa estatal de circulación.
+- Verde: `https://areaverda.cat/es/informacion/tipos-de-plazas/area-verde`
+- Azul: `https://areaverda.cat/es/informacion/tipos-de-plazas/area-azul`
+- Exclusivas residentes: `https://areaverda.cat/es/tipo-de-plazas/exclusivas-para-residentes`
 
-Las páginas se vuelven a comprobar periódicamente desde el servidor. Si una fuente no responde, la app lo indica y no inventa una regla.
+### Badalona
 
-## Seguridad de la decisión
+- Zona azul: `https://www.engestur.cat/es/services/zona-azul/`
+- Zona verde Artigues: publicación municipal de 05/06/2026 incluida en el código.
 
-Orden de prioridad mostrado al usuario:
+### Normativa estatal de marcas
 
-1. Señalización física del tramo.
-2. Ayuntamiento u operador municipal.
-3. AMB cuando corresponda.
-4. Normativa estatal DGT/BOE.
-
-ParkBCN es un asistente y no sustituye el tique, permiso o validación oficial.
+BOE · Reglamento General de Circulación, art. 171:
+`https://www.boe.es/buscar/act.php?id=BOE-A-2003-23514#a171`
 
 ## EasyPanel
 
-La V2 mantiene el mismo despliegue que V1:
+No cambia el despliegue:
 
-- Dockerfile en la raíz.
+- Dockerfile en raíz.
 - Puerto interno `3000`.
-- `npm run build` y `npm start`.
+- Subir archivos a `main` y pulsar **Implementar**.
 
-Tras subir los archivos a la rama `main`, en EasyPanel basta con **Implementar** de nuevo.
+## Nota de seguridad
 
-## Limitaciones V2
-
-- El perfil de residente necesita que el usuario indique su zona autorizada; la app no puede deducir el alcance legal solo por municipio.
-- Para municipios sin parser específico, se utilizan los datos AMB y las fuentes oficiales generales; las excepciones municipales se irán añadiendo de forma incremental.
-- El aviso local de 15 minutos sigue dependiendo de que el navegador/PWA permanezca operativo. Web Push en segundo plano queda para una versión posterior.
-- El parking libre guardado por el usuario es una referencia personal, no una certificación municipal.
+ParkBCN resume información oficial, pero la señalización física del tramo y la normativa vigente prevalecen siempre.

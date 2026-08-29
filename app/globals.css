@@ -165,3 +165,42 @@ button { -webkit-tap-highlight-color: transparent; }
   background: #eef9f2;
   color: #16784a;
 }
+
+/* V2.1 readability + voice/source states */
+.decisionCopy small { font-size: 10px; }
+.decisionCopy strong { font-size: 16px; }
+.decisionCopy p { font-size: 12px; line-height: 1.42; }
+.zoneBadge { font-size: 11px; }
+.distance { font-size: 12px; }
+.zoneCard h2 { font-size: 19px; }
+.city { font-size: 13px; }
+.facts small { font-size: 10px; }
+.facts b { font-size: 12px; line-height: 1.3; }
+.voiceText { font-size: 12px; line-height: 1.4; }
+.secondaryRow button { min-height: 42px; font-size: 12px; }
+.legalNote { font-size: 10px; line-height: 1.45; }
+.profileForm label > span { font-size: 13px; }
+.profileForm label small { font-size: 11px; }
+.modalDecision strong { font-size: 16px; }
+.modalDecision p { font-size: 13px; }
+.profileHint { font-size: 12px; }
+.sourceTitle h4 { font-size: 15px; }
+.sourceTitle span { font-size: 10px; }
+.sourceLink strong { font-size: 13px; }
+.sourceLink small { font-size: 11px; line-height: 1.3; }
+.sourceLink em { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; font-style: normal; }
+.sourceLink > span { font-size: 10px; }
+.factList strong { font-size: 13px; }
+.factList p { font-size: 12px; line-height: 1.45; }
+.factList small { font-size: 10px; }
+.priorityNote { font-size: 11px; line-height: 1.45; }
+.markGuide span b { font-size: 13px; }
+.markGuide span small { font-size: 11px; line-height: 1.42; }
+.residentConfirm { font-size: 12px; }
+.profileIntro { margin: -2px 0 12px; padding: 10px 11px; border-radius: 11px; background: #f6f8fa; color: #566170; font-size: 12px; line-height: 1.42; }
+.micAction.listening { background: #fff0ee; color: var(--red); border: 1px solid #f2d6d3; animation: micPulse 1.1s ease-in-out infinite; }
+@keyframes micPulse { 0%, 100% { opacity: 1; } 50% { opacity: .65; } }
+.factMeta { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+.factMeta small { margin: 0; }
+.factMeta a { color: #175fae; font-size: 11px; font-weight: 750; text-decoration: none; }
+.guideSource { display: flex; align-items: center; justify-content: center; min-height: 46px; border-radius: 13px; background: var(--ink); color: white; text-decoration: none; font-size: 12px; font-weight: 800; padding: 9px 12px; text-align: center; }
