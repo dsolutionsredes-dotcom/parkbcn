@@ -1,57 +1,48 @@
-# ParkBCN V2.1
+# ParkBCN V3
 
-Corrección de V2 centrada en fiabilidad de fuentes, micrófono y legibilidad.
+PWA móvil para consultar aparcamiento regulado en el área metropolitana de Barcelona con prioridad a fuentes oficiales.
 
-## Cambios principales
+## Cambios V3
 
-- **Fuentes oficiales contextuales:** solo se muestran enlaces que el servidor pudo abrir y cuyo contenido coincide con la regla esperada.
-- **Sin “No disponible”:** una fuente caída, redirigida a un índice genérico o que requiera autenticación simplemente no aparece como hipervínculo.
-- **L’Hospitalet:** se eliminó el enlace genérico al índice municipal. Se usan páginas directas de Zones AIRE / La Farga GEM (operador municipal), la publicación directa de gratuidad de agosto y la publicación específica de residentes.
-- **Barcelona:** enlace directo a AREA Verde, AREA Azul o Exclusivas Residentes según el tipo de tramo.
-- **Badalona:** enlace directo a Engestur para zona azul y a la publicación municipal de Artigues cuando corresponde a zona verde.
-- **Resto de municipios:** si no hay una fuente municipal específica validada, se muestra únicamente la fuente AMB pertinente; no se inventa un enlace local.
-- **Micrófono tap-to-talk:** nunca queda escuchando de forma continua. Se detiene tras el resultado, al volver a pulsar o automáticamente a los 8 segundos.
-- **Mi perfil:** existe un solo perfil activo por dispositivo. Editarlo reemplaza el perfil actual; no crea otra persona.
-- **Texto más grande:** se aumentó la legibilidad de tarjetas, reglas, fuentes y modales.
-- **Guía de marcas:** el enlace estatal lleva directamente al Reglamento General de Circulación en BOE.
+- Reconoce dinámicamente el municipio mediante una **capa oficial de límites de AMB** (36 municipios metropolitanos).
+- Mantiene el feed de tramos regulados oficial de **AMB Aparcament Metropolità** para los municipios integrados en esa plataforma.
+- Catálogo central de fuentes en `data/official-sources.json`; la interfaz no tiene URLs municipales dispersas.
+- Las páginas oficiales se comprueban en servidor antes de mostrarse. Si no responden o no contienen el contenido esperado, **no aparece hipervínculo**.
+- Fuentes directas verificadas para Barcelona, L'Hospitalet, Badalona, El Prat, Sant Joan Despí, Sant Just, Santa Coloma, Esplugues, Castelldefels, Montgat y Sant Boi, además de AMB.
+- Reglas temporales que se pueden detectar desde fuentes oficiales, por ejemplo gratuidad de agosto donde exista publicación vigente.
+- Perfil único de residente en el dispositivo; editarlo reemplaza el perfil actual.
+- Modo conducción con `watchPosition`, Wake Lock y mapa que sigue el GPS.
+- Si el usuario mueve manualmente el mapa durante conducción, el seguimiento se pausa y aparece **Volver a seguirme**.
+- Panel inferior con tres alturas: `peek`, `compact`, `expanded`; se desliza desde el tirador sin interferir con el mapa.
+- Al aparcar, el panel queda minimizado y el botón “He aparcado aquí” deja de estar disponible.
+- Micrófono `tap-to-talk`: nunca queda escuchando de forma continua; se apaga al terminar la frase, al tocarlo de nuevo o tras 7 segundos.
+- Tipografía móvil aumentada.
+- Interpretación conservadora de horarios: solo muestra “fuera del horario publicado” cuando el formato puede interpretarse con suficiente seguridad.
 
-## Fuentes base
+## Cobertura y límites reales
 
-### Datos cartográficos
+AMB enumera 36 municipios metropolitanos. ParkBCN V3 puede identificar jurisdicción dentro de esos 36 mediante la capa municipal oficial.
 
-AMB ArcGIS:
-`https://ide.amb.cat/geoserveis/rest/services/plataforma_metropolitana_aparcament/MapServer/0`
+El servicio AMB Aparcament Metropolità publica actualmente información de estacionamiento regulado para 11 municipios: Barcelona, L'Hospitalet, Badalona, El Prat, Sant Joan Despí, Sant Just Desvern, Santa Coloma de Gramenet, Esplugues de Llobregat, Castelldefels, Montgat y Sant Boi de Llobregat.
 
-### L’Hospitalet
+Por tanto, **identificar el municipio no significa que exista un mapa oficial de tramos regulados para todos los 36**. V3 muestra “sin tramo AMB” cuando no existe esa evidencia, en lugar de inventar una regla.
 
-- Zones AIRE: `https://www.lafarga.com/corporatiu/estacionaments-regulats-hospitalet/`
-- Gratuidad agosto: `https://www.lafarga.com/corporatiu/gratuitat-de-la-zona-blava-i-verda-durant-lagost/`
-- Residentes zona verde: `https://www.lafarga.com/corporatiu/no-caldra-distintiu-per-aparcar-a-les-zones-verdes-com-a-resident/`
+## Despliegue
 
-### Barcelona
-
-- Verde: `https://areaverda.cat/es/informacion/tipos-de-plazas/area-verde`
-- Azul: `https://areaverda.cat/es/informacion/tipos-de-plazas/area-azul`
-- Exclusivas residentes: `https://areaverda.cat/es/tipo-de-plazas/exclusivas-para-residentes`
-
-### Badalona
-
-- Zona azul: `https://www.engestur.cat/es/services/zona-azul/`
-- Zona verde Artigues: publicación municipal de 05/06/2026 incluida en el código.
-
-### Normativa estatal de marcas
-
-BOE · Reglamento General de Circulación, art. 171:
-`https://www.boe.es/buscar/act.php?id=BOE-A-2003-23514#a171`
-
-## EasyPanel
-
-No cambia el despliegue:
+Mismo despliegue que V2:
 
 - Dockerfile en raíz.
-- Puerto interno `3000`.
-- Subir archivos a `main` y pulsar **Implementar**.
+- Puerto interno: `3000`.
+- No hay que cambiar el dominio ni el servicio de EasyPanel.
+- Subir/commit al repo y volver a **Implementar**.
 
-## Nota de seguridad
+## Siguiente evolución recomendada
 
-ParkBCN resume información oficial, pero la señalización física del tramo y la normativa vigente prevalecen siempre.
+1. PostgreSQL para persistir catálogo de reglas/fuentes, versiones e historial de cambios.
+2. Job programado para revisar fuentes oficiales y crear versiones de las reglas.
+3. Push real en segundo plano para avisos de finalización.
+4. Integración ZBE/etiqueta ambiental del vehículo.
+5. Incidencias temporales/obras cuando cada ayuntamiento publique un feed oficial utilizable.
+6. Aparcamientos públicos alternativos y ocupación en tiempo real cuando exista API oficial.
+
+La señalización física del tramo siempre prevalece.

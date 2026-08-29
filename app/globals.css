@@ -204,3 +204,95 @@ button { -webkit-tap-highlight-color: transparent; }
 .factMeta small { margin: 0; }
 .factMeta a { color: #175fae; font-size: 11px; font-weight: 750; text-decoration: none; }
 .guideSource { display: flex; align-items: center; justify-content: center; min-height: 46px; border-radius: 13px; background: var(--ink); color: white; text-decoration: none; font-size: 12px; font-weight: 800; padding: 9px 12px; text-align: center; }
+
+/* V3: conducción, panel deslizable y legibilidad */
+html, body { font-size: 16px; }
+.status { max-width: 270px; font-size: 13px; line-height: 1.25; }
+.brand { font-size: 20px; }
+.brand span { font-size: 11px; }
+.legend span { font-size: 13px; padding: 7px 10px; }
+.legendInfo { width: 36px; min-height: 36px; font-size: 17px; }
+.drivePill span { font-size: 13px; }
+.drivePill small { font-size: 11px; }
+.recenterButton {
+  position: absolute; z-index: 515; top: 126px; right: 14px;
+  min-height: 42px; border: 0; border-radius: 13px; padding: 8px 12px;
+  background: var(--ink); color: white; box-shadow: 0 8px 24px rgba(17,24,39,.18);
+  font-size: 13px; font-weight: 800; cursor: pointer;
+}
+
+.bottomSheet { overflow: hidden; padding: 8px 12px 12px; transition: max-height .18s ease, padding .18s ease; }
+.bottomSheet.expanded { max-height: 66vh; }
+.bottomSheet.compact { max-height: 38vh; }
+.bottomSheet.peek { max-height: 126px; padding-bottom: 9px; }
+.sheetBody { overflow-y: auto; max-height: calc(66vh - 42px); overscroll-behavior: contain; padding-bottom: 1px; }
+.bottomSheet.compact .sheetBody { max-height: calc(38vh - 40px); }
+.sheetHandle {
+  width: 100%; height: 24px; border: 0; padding: 0; background: transparent;
+  display: grid; place-content: center; cursor: ns-resize; touch-action: none;
+}
+.sheetHandle i { display: block; width: 46px; height: 5px; border-radius: 999px; background: #c7cdd5; }
+
+.activeParking {
+  width: 100%; border: 0; text-align: left; cursor: pointer;
+  min-height: 72px; margin-bottom: 8px;
+}
+.activeParking small { font-size: 11px; }
+.activeParking strong { font-size: 22px; }
+.activeParking span { font-size: 12px; }
+.parkingChevron { flex: 0 0 auto; font-size: 22px !important; opacity: .85 !important; }
+
+.decisionCard { grid-template-columns: 40px 1fr 40px; padding: 12px; }
+.decisionIcon { width: 38px; height: 38px; font-size: 17px; }
+.decisionCopy small { font-size: 11px; }
+.decisionCopy strong { font-size: 18px; }
+.decisionCopy p { font-size: 14px; line-height: 1.45; }
+.infoButton { width: 40px; height: 40px; font-size: 20px; }
+.zoneBadge { font-size: 12px; padding: 6px 10px; }
+.distance { font-size: 13px; }
+.zoneCard h2 { font-size: 21px; }
+.city { font-size: 14px; }
+.facts { grid-template-columns: 1.45fr .8fr 1fr; }
+.facts small { font-size: 11px; }
+.facts b { font-size: 13px; line-height: 1.4; }
+.voiceText { font-size: 13px; line-height: 1.45; }
+.primaryAction, .secondaryAction { font-size: 15px; min-height: 52px; }
+.micAction { min-height: 52px; font-size: 22px; }
+.secondaryRow button { min-height: 46px; font-size: 13px; }
+.legalNote { font-size: 11px; line-height: 1.45; }
+
+.modalCard { padding: 18px; }
+.modalHeader small { font-size: 11px; }
+.modalHeader h3 { font-size: 22px; }
+.profileIntro { font-size: 14px; }
+.profileForm label > span { font-size: 14px; }
+.profileForm label small { font-size: 12px; }
+.profileForm input, .profileForm select { min-height: 48px; font-size: 16px; }
+.switchRow span { font-size: 14px; }
+.saveButton { min-height: 50px; font-size: 15px; }
+.modalDecision strong { font-size: 18px; }
+.modalDecision p { font-size: 14px; line-height: 1.5; }
+.profileHint { font-size: 13px; }
+.residentConfirm { min-height: 48px; font-size: 13px; }
+.sourceTitle h4 { font-size: 17px; }
+.sourceTitle span { font-size: 11px; }
+.sourceLink { padding: 13px 0; }
+.sourceLink strong { font-size: 14px; }
+.sourceLink small { font-size: 12px; line-height: 1.4; }
+.sourceLink em { font-size: 11px; }
+.sourceLink > span { font-size: 11px; }
+.factList strong { font-size: 14px; }
+.factList p { font-size: 13px; }
+.factMeta a { font-size: 12px; }
+.priorityNote { font-size: 12px; }
+.markGuide span b { font-size: 15px; }
+.markGuide span small { font-size: 13px; }
+.guideSource { min-height: 50px; font-size: 13px; }
+
+@media (min-width: 800px) {
+  .bottomSheet.expanded { max-height: calc(100vh - 36px); }
+  .bottomSheet.compact { max-height: 430px; }
+  .bottomSheet.peek { max-height: 130px; }
+  .sheetBody { max-height: calc(100vh - 100px); }
+  .recenterButton { right: 18px; }
+}

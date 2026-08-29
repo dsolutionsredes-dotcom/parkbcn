@@ -1,85 +1,8 @@
 import { NextResponse } from "next/server";
-
-const SOURCES = {
-  ambParking: {
-    id: "amb-parking",
-    name: "AMB · Aparcament Metropolità",
-    authority: "Àrea Metropolitana de Barcelona",
-    url: "https://www.amb.cat/es/web/mobilitat/mobilitat-sostenible/zones-d-estacionament/aparcament/informacio-de-servei",
-    role: "Información metropolitana de estacionamiento regulado",
-    mustContain: ["aparcament", "tiempo máximo"]
-  },
-  hospitaletAire: {
-    id: "hospitalet-aire",
-    name: "Zones AIRE · L’Hospitalet",
-    authority: "La Farga GEM · operador municipal",
-    url: "https://www.lafarga.com/corporatiu/estacionaments-regulats-hospitalet/",
-    role: "Horarios y regulación de zonas AIRE",
-    mustContain: ["zones aire", "horaris"]
-  },
-  hospitaletAugust: {
-    id: "hospitalet-august",
-    name: "Gratuidad azul y verde en agosto",
-    authority: "La Farga GEM · operador municipal",
-    url: "https://www.lafarga.com/corporatiu/gratuitat-de-la-zona-blava-i-verda-durant-lagost/",
-    role: "Excepción temporal de agosto",
-    detectPublishedDate: true,
-    mustContain: ["agost", "zona blava", "zona verda"]
-  },
-  hospitaletResident: {
-    id: "hospitalet-resident",
-    name: "Zona verde para residentes",
-    authority: "La Farga GEM · operador municipal",
-    url: "https://www.lafarga.com/corporatiu/no-caldra-distintiu-per-aparcar-a-les-zones-verdes-com-a-resident/",
-    role: "Condiciones de residente en zona verde",
-    detectPublishedDate: true,
-    mustContain: ["zona verda", "tiquet"]
-  },
-  barcelonaGreen: {
-    id: "barcelona-green",
-    name: "AREA Barcelona · Plazas verdes",
-    authority: "Ajuntament de Barcelona / B:SM",
-    url: "https://areaverda.cat/es/informacion/tipos-de-plazas/area-verde",
-    role: "Condiciones, horarios y tarifas de AREA Verde",
-    mustContain: ["residentes autorizados", "zona asignada"]
-  },
-  barcelonaBlue: {
-    id: "barcelona-blue",
-    name: "AREA Barcelona · Plazas azules",
-    authority: "Ajuntament de Barcelona / B:SM",
-    url: "https://areaverda.cat/es/informacion/tipos-de-plazas/area-azul",
-    role: "Condiciones, horarios y tarifas de AREA Azul",
-    mustContain: ["estacionamiento máximo", "tarifas azul"]
-  },
-  badalonaBlue: {
-    id: "badalona-blue",
-    name: "Badalona · Zona azul",
-    authority: "Engestur · empresa municipal",
-    url: "https://www.engestur.cat/es/services/zona-azul/",
-    role: "Horarios, tarifas y control de la zona azul",
-    mustContain: ["zona azul", "horario"]
-  },
-  badalonaGreen: {
-    id: "badalona-green-artigues",
-    name: "Badalona · Zona verde de Artigues",
-    authority: "Ajuntament de Badalona",
-    url: "https://www.badalona.cat/ca/actualitat/noticies/el-barri-dartigues-es-el-primer-de-badalona-que-comptara-amb-zona-verda-daparcament-per-a-residents-en-una-decisio-consensuada-amb-els-veins",
-    role: "Publicación municipal sobre la zona verde de Artigues",
-    detectPublishedDate: true,
-    mustContain: ["artigues", "zona verda"]
-  },
-  barcelonaResidents: {
-    id: "barcelona-residents",
-    name: "AREA Barcelona · Exclusivas residentes",
-    authority: "Ajuntament de Barcelona / B:SM",
-    url: "https://areaverda.cat/es/tipo-de-plazas/exclusivas-para-residentes",
-    role: "Plazas exclusivas, horarios y excepciones 24 h",
-    mustContain: ["exclusivas residentes", "24 horas"]
-  }
-};
+import registry from "../../../data/official-sources.json";
 
 function normalize(value = "") {
-  return value
+  return String(value)
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
@@ -105,20 +28,18 @@ function stripHtml(html = "") {
     .replace(/&agrave;/gi, "à")
     .replace(/&egrave;/gi, "è")
     .replace(/&ograve;/gi, "ò")
-    .replace(/&iuml;/gi, "ï")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function madridDateParts() {
+function todayMadrid() {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Madrid",
     year: "numeric",
     month: "2-digit",
     day: "2-digit"
   }).formatToParts(new Date());
-  const get = (type) => parts.find((part) => part.type === type)?.value;
-
+  const get = (type) => parts.find((p) => p.type === type)?.value;
   return {
     year: Number(get("year")),
     month: Number(get("month")),
@@ -127,35 +48,39 @@ function madridDateParts() {
   };
 }
 
-function firstPublishedDate(text = "") {
-  const match = text.match(/\b(\d{2})\/(\d{2})\/(\d{4})\b/);
-  return match ? match[0] : null;
+function firstDate(text = "") {
+  const dmy = text.match(/\b(\d{1,2})[./-](\d{1,2})[./-](20\d{2})\b/);
+  if (dmy) return `${String(dmy[1]).padStart(2, "0")}/${String(dmy[2]).padStart(2, "0")}/${dmy[3]}`;
+  const iso = text.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  return null;
 }
 
-async function readSource(source) {
+async function readSource(id) {
+  const source = registry.sources[id];
+  if (!source) return null;
   try {
     const response = await fetch(source.url, {
       next: { revalidate: 1800 },
-      headers: { "User-Agent": "ParkBCN/0.2.1 (+official-source-check)" }
+      headers: { "User-Agent": "ParkBCN/0.3 (+official-source-check)" }
     });
-
     if (!response.ok) return null;
     if (/login|signin|oauth|autentic|carpeta.?ciutadana/i.test(response.url || "")) return null;
 
     const html = await response.text();
     const text = stripHtml(html);
-    const normalizedText = normalize(text);
-    const expected = source.mustContain || [];
-    const hasExpectedContent = expected.every((phrase) =>
-      normalizedText.includes(normalize(phrase))
-    );
-    if (expected.length && !hasExpectedContent) return null;
+    const normalized = normalize(text);
+    const expected = source.mustContainAny || [];
+    if (expected.length && !expected.some((phrase) => normalized.includes(normalize(phrase)))) {
+      return null;
+    }
 
     return {
+      id,
       ...source,
-      available: true,
       checkedAt: new Date().toISOString(),
-      publishedDate: source.detectPublishedDate ? firstPublishedDate(text) : null,
+      publishedDate: source.detectPublishedDate ? firstDate(text) : null,
+      lastModified: response.headers.get("last-modified") || null,
       text
     };
   } catch {
@@ -163,228 +88,203 @@ async function readSource(source) {
   }
 }
 
-function hospitaletFacts(byId, today) {
+function sourceFact(id, title, text, extra = {}) {
+  return { id: `${id}-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, title, text, sourceId: id, ...extra };
+}
+
+function deriveRules(sources, city, zoneType, residentProfile, today) {
+  const byId = Object.fromEntries(sources.map((s) => [s.id, s]));
   const facts = [];
   const temporaryRules = [];
   const residentRules = [];
+  const type = normalize(zoneType);
+  const isGreen = /verd|green/.test(type);
+  const isBlue = /blav|azul|blue/.test(type);
 
-  const august = byId["hospitalet-august"];
-  if (august) {
-    const text = normalize(august.text);
-    const publishedYear = august.publishedDate
-      ? Number(august.publishedDate.split("/")[2])
-      : today.year;
-    const confirmsAugust =
-      text.includes("1 al 31") &&
-      text.includes("agost") &&
-      text.includes("zona") &&
-      (text.includes("blava") || text.includes("azul")) &&
-      (text.includes("verda") || text.includes("verde")) &&
-      (text.includes("gratuit") || text.includes("gratu"));
-
-    if (confirmsAugust) {
+  if (byId["hospitalet-august"] && (isGreen || isBlue)) {
+    const t = normalize(byId["hospitalet-august"].text);
+    if (today.month === 8 && /gratuit|gratu/.test(t)) {
       temporaryRules.push({
-        id: `hospitalet-august-free-${publishedYear}`,
-        title: "Gratuidad especial de agosto",
-        appliesTo: ["zona blava", "zona verda", "zona azul", "zona verde"],
-        excludes: ["carga y descarga", "carrega i descarrega", "dum", "zona groga", "zona amarilla"],
+        id: "hospitalet-august-free",
+        active: true,
+        appliesTo: ["zona verde", "zona verda", "zona azul", "zona blava"],
+        excludes: ["dum", "amarilla", "groga", "carga", "carrega"],
         free: true,
-        start: `${publishedYear}-08-01`,
-        end: `${publishedYear}-08-31`,
-        active:
-          publishedYear === today.year &&
-          today.month === 8 &&
-          today.day >= 1 &&
-          today.day <= 31,
-        publishedDate: august.publishedDate,
-        sourceId: august.id,
-        summary:
-          "Del 1 al 31 de agosto las zonas azul y verde de L’Hospitalet son gratuitas. La zona DUM/carga y descarga sigue regulada."
+        sourceId: "hospitalet-august",
+        summary: "Durante agosto, la publicación municipal vigente indica gratuidad de las zonas azul y verde; DUM/carga y descarga queda fuera de esta excepción."
       });
-      facts.push({
-        id: "hospitalet-august-fact",
-        title: "Excepción de agosto",
-        text:
-          "La publicación oficial del operador municipal confirma la gratuidad temporal de las zonas azul y verde durante agosto; no incluye DUM.",
-        publishedDate: august.publishedDate,
-        sourceId: august.id
-      });
+      facts.push(sourceFact("hospitalet-august", "Gratuidad de agosto", "La excepción oficial de agosto se aplica a zona azul y verde, no a DUM."));
     }
   }
 
-  const resident = byId["hospitalet-resident"];
-  if (resident) {
-    const text = normalize(resident.text);
-    const freeAssigned =
-      text.includes("aparcar gratu") &&
-      (text.includes("zona verda que") || text.includes("zona verde que"));
-    const requiresTicket = text.includes("tiquet gratu") || text.includes("ticket gratu");
-    const weekdayHours = text.includes("8 a 20") && text.includes("dilluns a divendres");
-
-    if (freeAssigned) {
-      residentRules.push({
-        id: "hospitalet-resident-green",
-        municipality: "L'Hospitalet de Llobregat",
-        type: "resident-green",
-        freeAssignedGreen: true,
-        assignedAreaOnly: true,
-        blueBonus: false,
-        requiresTicket,
-        weekdayHours: weekdayHours ? "08:00–20:00, lunes a viernes" : null,
-        sourceId: resident.id,
-        summary:
-          "La gratuidad de residente se aplica a la zona verde que corresponde al residente; sigue siendo necesario obtener el tique gratuito cuando proceda."
-      });
-      facts.push({
-        id: "hospitalet-resident-fact",
-        title: "Residente en zona verde",
-        text:
-          "La autorización de residente no convierte en gratuita cualquier zona verde de L’Hospitalet: se aplica a la zona que corresponde al residente.",
-        publishedDate: resident.publishedDate,
-        sourceId: resident.id
-      });
-    }
-  }
-
-  return { temporaryRules, residentRules, facts };
-}
-
-function barcelonaFacts(byId, zoneType) {
-  const facts = [];
-  const residentRules = [];
-  const kind = normalize(zoneType);
-
-  const green = byId["barcelona-green"];
-  if (green && (kind.includes("verd") || kind.includes("green"))) {
-    const text = normalize(green.text);
-    const residentAssigned = text.includes("zona asignada") && text.includes("0,20");
-    const freeOutsideHours = text.includes("fuera de este horario") && text.includes("libre");
-    if (residentAssigned) {
-      residentRules.push({
-        id: "barcelona-resident-green",
-        municipality: "Barcelona",
-        type: "resident-green",
-        freeAssignedGreen: false,
-        assignedAreaOnly: true,
-        residentDailyPrice: "0,20 €/día",
-        requiresTicket: true,
-        sourceId: green.id,
-        summary:
-          "En Barcelona el residente autorizado obtiene tarifa reducida solo en su zona asignada; fuera de ella se aplica la tarifa de no residente."
-      });
-    }
-    facts.push({
-      id: "barcelona-green-fact",
-      title: "AREA Verde",
-      text: freeOutsideHours
-        ? "AREA indica que fuera del horario de regulación el estacionamiento verde es libre, salvo condiciones específicas señalizadas en el tramo."
-        : "AREA Verde depende del horario y señalización específica del tramo.",
-      sourceId: green.id
+  if (byId["hospitalet-resident"] && isGreen && residentProfile) {
+    residentRules.push({
+      id: "hospitalet-resident-green",
+      municipality: "L'Hospitalet de Llobregat",
+      type: "resident-green",
+      freeAssignedGreen: true,
+      assignedAreaOnly: true,
+      requiresTicket: true,
+      sourceId: "hospitalet-resident",
+      summary: "La bonificación de residente se aplica a la zona verde asignada y requiere validación/tique cuando corresponda."
     });
   }
 
-  const blue = byId["barcelona-blue"];
-  if (blue && (kind.includes("blav") || kind.includes("azul") || kind.includes("blue"))) {
-    facts.push({
-      id: "barcelona-blue-fact",
-      title: "AREA Azul",
-      text:
-        "El horario y el tiempo máximo dependen del tramo; AREA indica que siempre debe comprobarse la señalización vertical específica.",
-      sourceId: blue.id
+  if (byId["barcelona-green"] && isGreen) {
+    residentRules.push({
+      id: "barcelona-resident-green",
+      municipality: "Barcelona",
+      type: "resident-green",
+      freeAssignedGreen: false,
+      residentDailyPrice: "0,20 €/día",
+      assignedAreaOnly: true,
+      requiresTicket: true,
+      sourceId: "barcelona-green",
+      summary: "La tarifa de residente solo se aplica en la zona AREA asignada."
     });
   }
 
-  const residents = byId["barcelona-residents"];
-  if (residents && kind.includes("resident")) {
-    const text = normalize(residents.text);
-    if (text.includes("20:00 a 8:00") || text.includes("20:00 a 08:00")) {
-      facts.push({
-        id: "barcelona-residents-night",
-        title: "Exclusiva residentes con horario",
-        text:
-          "En las zonas exclusivas reguladas de 8:00 a 20:00, AREA permite a no residentes estacionar libremente de 20:00 a 8:00, salvo condiciones específicas.",
-        sourceId: residents.id
-      });
-    }
-    if (text.includes("24 horas") && (text.includes("barceloneta") || text.includes("born"))) {
-      facts.push({
-        id: "barcelona-residents-24h",
-        title: "Exclusividad 24 horas",
-        text:
-          "AREA publica zonas con exclusividad de residentes durante 24 horas, entre ellas ámbitos de Barceloneta y Born.",
-        sourceId: residents.id
+  if (byId["barcelona-residents"] && /resident/.test(type)) {
+    facts.push(sourceFact("barcelona-residents", "Exclusivas de residentes", "Barcelona publica zonas exclusivas con regulación horaria y otras con exclusividad durante 24 horas; la señal del tramo decide el caso concreto."));
+  }
+
+  if (byId["santboi-blue"] && isBlue) {
+    const t = normalize(byId["santboi-blue"].text);
+    if (today.month === 8 && t.includes("1 al 31") && t.includes("agost")) {
+      temporaryRules.push({
+        id: "santboi-august-blue-free",
+        active: true,
+        appliesTo: ["zona azul", "zona blava"],
+        excludes: [],
+        free: true,
+        sourceId: "santboi-blue",
+        summary: "Sant Boi publica la zona azul como aparcamiento libre del 1 al 31 de agosto; aun así debe respetarse cualquier reserva o señal específica del tramo."
       });
     }
   }
 
-  return { facts, residentRules };
+  if (byId["santjoan-regulated"] && isGreen && residentProfile) {
+    residentRules.push({
+      id: "santjoan-resident-green",
+      municipality: "Sant Joan Despí",
+      type: "resident-green",
+      freeAssignedGreen: true,
+      assignedAreaOnly: true,
+      requiresTicket: true,
+      sourceId: "santjoan-regulated",
+      summary: "Las zonas verdes para residentes requieren vehículo autorizado y validación del tique; las condiciones cambian según el ámbito."
+    });
+  }
+
+  if (byId["elprat-parking"] && isGreen && residentProfile) {
+    residentRules.push({
+      id: "elprat-resident-green",
+      municipality: "El Prat de Llobregat",
+      type: "resident-green",
+      freeAssignedGreen: true,
+      assignedAreaOnly: false,
+      requiresTicket: false,
+      sourceId: "elprat-parking",
+      summary: "La zona verde publicada para litoral/espacios naturales es gratuita para vehículos con distintivo de residente; comprueba que el tramo pertenece a ese ámbito."
+    });
+  }
+
+  if (byId["castelldefels-green-2026"] && isGreen && residentProfile) {
+    residentRules.push({
+      id: "castelldefels-resident-green",
+      municipality: "Castelldefels",
+      type: "resident-green",
+      freeAssignedGreen: true,
+      assignedAreaOnly: false,
+      requiresTicket: false,
+      sourceId: "castelldefels-green-2026",
+      summary: "La publicación municipal de 2026 indica zona verde gratuita para residentes que cumplen los requisitos municipales."
+    });
+  }
+
+  if (byId["esplugues-green"] && isGreen && residentProfile) {
+    residentRules.push({
+      id: "esplugues-resident-green",
+      municipality: "Esplugues de Llobregat",
+      type: "resident-green",
+      freeAssignedGreen: null,
+      assignedAreaOnly: true,
+      requiresTicket: true,
+      sourceId: "esplugues-green",
+      summary: "La autorización permite estacionar en la zona verde territorial correspondiente y exige comprobante; la tarifa concreta debe tomarse del tramo/AMB."
+    });
+  }
+
+  if (byId["santjust-parking"] && isGreen && residentProfile) {
+    residentRules.push({
+      id: "santjust-resident-green",
+      municipality: "Sant Just Desvern",
+      type: "resident-green",
+      freeAssignedGreen: null,
+      assignedAreaOnly: true,
+      requiresTicket: true,
+      sourceId: "santjust-parking",
+      summary: "Sant Just distingue residentes del perímetro de zona verde; precio y validación dependen de la condición concreta."
+    });
+  }
+
+  if (byId["montgat-parking"]) {
+    facts.push(sourceFact("montgat-parking", "Montgat tiene varias reglas", "Montgat diferencia zona Express, verde exclusiva, verde preferente y azul, con reglas distintas para residentes y no residentes; no se debe decidir solo por el color."));
+  }
+
+  if (byId["santacoloma-parking"] && isBlue) {
+    facts.push(sourceFact("santacoloma-parking", "Fuera del horario de pago", "Santa Coloma publica que fuera del horario regulado la zona azul no está condicionada al pago; la señalización concreta sigue prevaleciendo."));
+  }
+
+  if (byId["badalona-blue"] && isBlue) {
+    facts.push(sourceFact("badalona-blue", "Horario oficial de Badalona", "Engestur publica horarios distintos entre zona urbana y zona de playa; ParkBCN usa además el horario del tramo devuelto por AMB."));
+  }
+
+  return { facts, temporaryRules, residentRules };
 }
 
-function publicSource(source) {
-  if (!source) return null;
-  const { text, ...safe } = source;
-  return safe;
+function cityKey(input) {
+  const n = normalize(input);
+  return registry.metropolitanMunicipalities.find((name) => normalize(name) === n) ||
+    registry.metropolitanMunicipalities.find((name) => normalize(name).includes(n) || n.includes(normalize(name))) || input;
+}
+
+function filterMunicipalSourceIds(city, zoneType, residentProfile) {
+  const ids = registry.municipalitySourceMap[city] || [];
+  const type = normalize(zoneType);
+  return ids.filter((id) => {
+    if (id === "barcelona-green") return /verd|green/.test(type);
+    if (id === "barcelona-blue") return /blav|azul|blue/.test(type);
+    if (id === "barcelona-residents") return /resident/.test(type);
+    if (id === "hospitalet-august") return /verd|green|blav|azul|blue/.test(type);
+    if (id === "hospitalet-resident") return residentProfile && /verd|green/.test(type);
+    if (id === "badalona-blue") return /blav|azul|blue/.test(type);
+    if (id === "badalona-green-artigues") return /verd|green/.test(type);
+    if (id === "santjoan-blue") return /blav|azul|blue/.test(type);
+    if (id === "esplugues-green") return residentProfile && /verd|green/.test(type);
+    if (id === "castelldefels-green-2026") return /verd|green/.test(type);
+    if (id === "santboi-blue") return /blav|azul|blue/.test(type);
+    return true;
+  });
 }
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const city = searchParams.get("city") || "";
+  const rawCity = searchParams.get("city") || "";
   const zoneType = searchParams.get("type") || "";
   const residentProfile = searchParams.get("resident") === "1";
-  const normalizedCity = normalize(city);
-  const normalizedType = normalize(zoneType);
-  const today = madridDateParts();
-
+  const city = cityKey(rawCity);
+  const today = todayMadrid();
   const wanted = [];
 
-  if (normalizedCity.includes("hospitalet")) {
-    wanted.push(SOURCES.hospitaletAire);
-    if (residentProfile && (normalizedType.includes("verd") || normalizedType.includes("green"))) {
-      wanted.push(SOURCES.hospitaletResident);
-    }
-    if (
-      today.month === 8 &&
-      (normalizedType.includes("verd") ||
-        normalizedType.includes("blav") ||
-        normalizedType.includes("verde") ||
-        normalizedType.includes("azul"))
-    ) {
-      wanted.push(SOURCES.hospitaletAugust);
-    }
-  } else if (normalizedCity === "barcelona" || normalizedCity.includes("barcelona ciutat")) {
-    if (normalizedType.includes("verd") || normalizedType.includes("green")) {
-      wanted.push(SOURCES.barcelonaGreen);
-    } else if (
-      normalizedType.includes("blav") ||
-      normalizedType.includes("azul") ||
-      normalizedType.includes("blue")
-    ) {
-      wanted.push(SOURCES.barcelonaBlue);
-    } else if (normalizedType.includes("resident")) {
-      wanted.push(SOURCES.barcelonaResidents);
-    }
-  } else if (normalizedCity.includes("badalona")) {
-    if (normalizedType.includes("verd") || normalizedType.includes("green")) {
-      wanted.push(SOURCES.badalonaGreen);
-    } else if (
-      normalizedType.includes("blav") ||
-      normalizedType.includes("azul") ||
-      normalizedType.includes("blue")
-    ) {
-      wanted.push(SOURCES.badalonaBlue);
-    } else {
-      wanted.push(SOURCES.ambParking);
-    }
-  } else {
-    wanted.push(SOURCES.ambParking);
-  }
+  if (registry.ambParkingMunicipalities.includes(city)) wanted.push("amb-parking");
+  wanted.push(...filterMunicipalSourceIds(city, zoneType, residentProfile));
 
-  const unique = [...new Map(wanted.map((item) => [item.id, item])).values()];
-  const loaded = (await Promise.all(unique.map(readSource))).filter(Boolean);
-  const byId = Object.fromEntries(loaded.map((source) => [source.id, source]));
+  const sourceIds = [...new Set(wanted)];
+  const loaded = (await Promise.all(sourceIds.map(readSource))).filter(Boolean);
+  const derived = deriveRules(loaded, city, zoneType, residentProfile, today);
 
-  const hospitalet = hospitaletFacts(byId, today);
-  const barcelona = barcelonaFacts(byId, zoneType);
+  const publicSources = loaded.map(({ text, ...source }) => source);
 
   return NextResponse.json(
     {
@@ -392,25 +292,15 @@ export async function GET(request) {
       zoneType,
       localDate: today.iso,
       checkedAt: new Date().toISOString(),
-      temporaryRules: hospitalet.temporaryRules,
-      residentRules: [...hospitalet.residentRules, ...barcelona.residentRules],
-      facts: [...hospitalet.facts, ...barcelona.facts],
-      sources: loaded.map(publicSource),
+      ambParkingIntegrated: registry.ambParkingMunicipalities.includes(city),
+      metropolitanMunicipality: registry.metropolitanMunicipalities.includes(city),
+      sources: publicSources,
+      ...derived,
       policy: {
-        warning:
-          "ParkBCN solo muestra fuentes oficiales que pudo comprobar en esta consulta. Si una fuente no responde o no es específica para la regla, no se muestra como enlace.",
-        sourcePriority: [
-          "Señalización física del tramo",
-          "Ayuntamiento / operador municipal",
-          "AMB cuando corresponda",
-          "Normativa estatal"
-        ]
+        warning: "Solo se muestran enlaces oficiales que respondieron y cuyo contenido coincide con la regla buscada. La señalización física del tramo prevalece.",
+        sourcePriority: ["Señalización física", "Ayuntamiento / operador municipal", "AMB", "DGT / BOE"]
       }
     },
-    {
-      headers: {
-        "Cache-Control": "public, s-maxage=1800, stale-while-revalidate=3600"
-      }
-    }
+    { headers: { "Cache-Control": "public, s-maxage=1800, stale-while-revalidate=3600" } }
   );
 }

@@ -1,0 +1,163 @@
+{
+  "metropolitanMunicipalities": [
+    "Badalona", "Badia del Vallès", "Barberà del Vallès", "Barcelona", "Begues",
+    "Castellbisbal", "Castelldefels", "Cerdanyola del Vallès", "Cervelló", "Corbera de Llobregat",
+    "Cornellà de Llobregat", "El Papiol", "El Prat de Llobregat", "Esplugues de Llobregat", "Gavà",
+    "L'Hospitalet de Llobregat", "La Palma de Cervelló", "Molins de Rei", "Montcada i Reixac", "Montgat",
+    "Pallejà", "Ripollet", "Sant Adrià de Besòs", "Sant Andreu de la Barca", "Sant Boi de Llobregat",
+    "Sant Climent de Llobregat", "Sant Cugat del Vallès", "Sant Feliu de Llobregat", "Sant Joan Despí",
+    "Sant Just Desvern", "Sant Vicenç dels Horts", "Santa Coloma de Cervelló", "Santa Coloma de Gramenet",
+    "Tiana", "Torrelles de Llobregat", "Viladecans"
+  ],
+  "ambParkingMunicipalities": [
+    "Badalona", "Barcelona", "Castelldefels", "El Prat de Llobregat", "Esplugues de Llobregat",
+    "L'Hospitalet de Llobregat", "Montgat", "Sant Boi de Llobregat", "Sant Joan Despí",
+    "Sant Just Desvern", "Santa Coloma de Gramenet"
+  ],
+  "sources": {
+    "amb-parking": {
+      "name": "AMB · Aparcament Metropolità",
+      "authority": "Àrea Metropolitana de Barcelona",
+      "url": "https://www.amb.cat/es/web/mobilitat/mobilitat-sostenible/zones-d-estacionament/aparcament/informacio-de-servei",
+      "role": "Horario, tarifa y tiempo máximo de los municipios adheridos",
+      "mustContainAny": ["tiempo máximo", "temps màxim", "aparcament metropolità"]
+    },
+    "hospitalet-aire": {
+      "name": "Zones AIRE · L’Hospitalet",
+      "authority": "La Farga GEM · operador municipal",
+      "url": "https://www.lafarga.com/corporatiu/estacionamientos-regulados-hospitalet/",
+      "role": "Horarios y regulación de las zonas AIRE",
+      "mustContainAny": ["zones aire", "zonas aire", "collblanc"]
+    },
+    "hospitalet-august": {
+      "name": "L’Hospitalet · gratuidad de agosto",
+      "authority": "La Farga GEM · operador municipal",
+      "url": "https://www.lafarga.com/corporatiu/gratuitat-de-la-zona-blava-i-verda-durant-lagost/",
+      "role": "Excepción temporal oficial de agosto",
+      "detectPublishedDate": true,
+      "mustContainAny": ["agost", "zona blava", "zona verda"]
+    },
+    "hospitalet-resident": {
+      "name": "L’Hospitalet · zona verde residentes",
+      "authority": "La Farga GEM · operador municipal",
+      "url": "https://www.lafarga.com/corporatiu/no-caldra-distintiu-per-aparcar-a-les-zones-verdes-com-a-resident/",
+      "role": "Condiciones oficiales de residentes en zona verde",
+      "detectPublishedDate": true,
+      "mustContainAny": ["zona verda", "tiquet gratu", "resident"]
+    },
+    "barcelona-green": {
+      "name": "AREA Barcelona · Verde",
+      "authority": "Ajuntament de Barcelona / B:SM",
+      "url": "https://areaverda.cat/es/informacion/tipos-de-plazas/area-verde",
+      "role": "Condiciones, horarios y tarifas de AREA Verde",
+      "mustContainAny": ["zona asignada", "residentes autorizados", "área verde"]
+    },
+    "barcelona-blue": {
+      "name": "AREA Barcelona · Azul",
+      "authority": "Ajuntament de Barcelona / B:SM",
+      "url": "https://areaverda.cat/es/informacion/tipos-de-plazas/area-azul",
+      "role": "Condiciones, horarios y tarifas de AREA Azul",
+      "mustContainAny": ["estacionamiento máximo", "área azul", "tarifas"]
+    },
+    "barcelona-residents": {
+      "name": "AREA Barcelona · Exclusivas residentes",
+      "authority": "Ajuntament de Barcelona / B:SM",
+      "url": "https://areaverda.cat/es/tipo-de-plazas/exclusivas-para-residentes",
+      "role": "Plazas exclusivas, horarios y excepciones 24 h",
+      "mustContainAny": ["24 horas", "20:00 a 8:00", "exclusivas residentes"]
+    },
+    "badalona-blue": {
+      "name": "Badalona · Zona azul",
+      "authority": "Engestur · empresa municipal",
+      "url": "https://www.engestur.cat/services/zona-blava/",
+      "role": "Horarios, zonas y control de la zona azul",
+      "mustContainAny": ["zona blava", "horari", "zona urbana"]
+    },
+    "badalona-green-artigues": {
+      "name": "Badalona · Zona verde Artigues",
+      "authority": "Ajuntament de Badalona",
+      "url": "https://www.badalona.cat/ca/actualitat/noticies/el-barri-dartigues-es-el-primer-de-badalona-que-comptara-amb-zona-verda-daparcament-per-a-residents-en-una-decisio-consensuada-amb-els-veins",
+      "role": "Publicación municipal sobre la zona verde de Artigues",
+      "detectPublishedDate": true,
+      "mustContainAny": ["artigues", "zona verda"]
+    },
+    "elprat-parking": {
+      "name": "El Prat · Zona azul / verde",
+      "authority": "Ajuntament del Prat de Llobregat",
+      "url": "https://www.elprat.cat/ciutat-i-territori/mobilitat/zona-blava-zona-verda",
+      "role": "Regulación municipal de zonas azul y verde",
+      "mustContainAny": ["zona blava", "zona verda", "prat espais"]
+    },
+    "santjoan-regulated": {
+      "name": "Sant Joan Despí · Estacionamiento regulado",
+      "authority": "Ajuntament de Sant Joan Despí",
+      "url": "https://sjdespi.cat/es/la-ciudad-por-temas/policia-local/areas-de-estacionamiento-regulado",
+      "role": "Tipos de zona, residentes, DUM y P+R",
+      "mustContainAny": ["zonas de estacionamiento regulado", "zona verde", "zona azul"]
+    },
+    "santjoan-blue": {
+      "name": "Sant Joan Despí · Zona azul",
+      "authority": "Ajuntament de Sant Joan Despí",
+      "url": "https://sjdespi.cat/es/la-ciudad-por-temas/movilidad/areas-de-estacionamiento-regulado/zona-azul",
+      "role": "Tarifas y condiciones oficiales de zona azul",
+      "mustContainAny": ["zona azul", "tarifas"]
+    },
+    "santjust-parking": {
+      "name": "Sant Just · Aparcamientos",
+      "authority": "Ajuntament de Sant Just Desvern",
+      "url": "https://mobilitat.santjust.net/aparcaments/",
+      "role": "Mapa y reglas de zonas azul, verde y naranja",
+      "mustContainAny": ["zona blava", "zona verda", "zona taronja"]
+    },
+    "santacoloma-parking": {
+      "name": "Santa Coloma · Vehículo privado",
+      "authority": "Ajuntament de Santa Coloma de Gramenet",
+      "url": "https://www.gramenet.cat/ajuntament/arees-municipals/mobilitat/santa-coloma-es-mou-en-vehicle-privat/",
+      "role": "Zona azul, horario, máximo y aparcamiento libre",
+      "mustContainAny": ["zona blava", "90", "aparcament"]
+    },
+    "esplugues-green": {
+      "name": "Esplugues · Autorización zona verde",
+      "authority": "Ajuntament d’Esplugues de Llobregat",
+      "url": "https://intranet.esplugues.cat/WebAplic/PAM/Tramits/cataleg.nsf/0/AD31B8BEEA5A8FCEC1257D8C0038BC10?OpenDocument=&idioma=01",
+      "role": "Requisitos y uso de la autorización de residente",
+      "mustContainAny": ["autoritzacio aparcament", "zona verda", "resident"]
+    },
+    "castelldefels-green-2026": {
+      "name": "Castelldefels · Zona verde 2026",
+      "authority": "Ajuntament de Castelldefels",
+      "url": "https://www.castelldefels.org/ca/actualitat/elcastell/noticies/entra-en-vigor-horari-estiu-zona-verda-aparcament",
+      "role": "Regulación y gratuidad de residentes en zona verde",
+      "detectPublishedDate": true,
+      "mustContainAny": ["zona verda", "2026", "gratuït"]
+    },
+    "montgat-parking": {
+      "name": "Montgat · Estacionamientos",
+      "authority": "Ajuntament de Montgat",
+      "url": "https://www.montgat.cat/municipi/guia-del-municipi/estacionaments?lang=ca",
+      "role": "Zona Express, verde, azul, residentes y temporada de verano",
+      "detectPublishedDate": true,
+      "mustContainAny": ["estacionament express", "zona verda", "zona blava"]
+    },
+    "santboi-blue": {
+      "name": "Sant Boi · Zona azul",
+      "authority": "Ajuntament de Sant Boi de Llobregat",
+      "url": "https://www.santboi.cat/ajuntament/aemas/zona-blava-daparcament",
+      "role": "Horario, días libres y funcionamiento de zona azul",
+      "mustContainAny": ["zona blava", "dies són d’aparcament lliure", "agost"]
+    }
+  },
+  "municipalitySourceMap": {
+    "Barcelona": ["barcelona-green", "barcelona-blue", "barcelona-residents"],
+    "L'Hospitalet de Llobregat": ["hospitalet-aire", "hospitalet-august", "hospitalet-resident"],
+    "Badalona": ["badalona-blue", "badalona-green-artigues"],
+    "El Prat de Llobregat": ["elprat-parking"],
+    "Sant Joan Despí": ["santjoan-regulated", "santjoan-blue"],
+    "Sant Just Desvern": ["santjust-parking"],
+    "Santa Coloma de Gramenet": ["santacoloma-parking"],
+    "Esplugues de Llobregat": ["esplugues-green"],
+    "Castelldefels": ["castelldefels-green-2026"],
+    "Montgat": ["montgat-parking"],
+    "Sant Boi de Llobregat": ["santboi-blue"]
+  }
+}
