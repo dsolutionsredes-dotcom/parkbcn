@@ -1,6 +1,6 @@
 {
-  "name": "parkbcn-v2",
-  "version": "0.3.0",
+  "name": "parkbcn-v3-1",
+  "version": "0.3.1",
   "private": true,
   "scripts": {
     "dev": "next dev",

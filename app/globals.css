@@ -296,3 +296,19 @@ html, body { font-size: 16px; }
   .sheetBody { max-height: calc(100vh - 100px); }
   .recenterButton { right: 18px; }
 }
+
+/* V3.1: estado actual, precio y legibilidad */
+.factsFour { grid-template-columns: 1.35fr .75fr .9fr 1fr; }
+.decisionPrice { margin-top: 9px; display: inline-flex; padding: 6px 9px; border-radius: 9px; background: rgba(255,255,255,.75); font-size: 15px; font-weight: 900; }
+.inlineOfficialLink { color: #175fae; font-weight: 800; text-decoration: none; }
+.decisionCopy strong { font-size: 19px; }
+.decisionCopy p { font-size: 15px; }
+.zoneCard h2 { font-size: 22px; }
+.city { font-size: 15px; }
+.facts small { font-size: 12px; }
+.facts b { font-size: 14px; }
+.sourceLink strong { font-size: 15px; }
+.sourceLink small { font-size: 13px; }
+@media (max-width: 520px) {
+  .factsFour { grid-template-columns: 1fr 1fr; }
+}

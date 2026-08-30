@@ -1,48 +1,40 @@
-# ParkBCN V3
+# ParkBCN V3.1
 
-PWA móvil para consultar aparcamiento regulado en el área metropolitana de Barcelona con prioridad a fuentes oficiales.
+Actualización segura sobre V3 enfocada en **“¿puedo aparcar aquí ahora y cuánto cuesta?”**.
 
-## Cambios V3
+## Cambios V3.1
 
-- Reconoce dinámicamente el municipio mediante una **capa oficial de límites de AMB** (36 municipios metropolitanos).
-- Mantiene el feed de tramos regulados oficial de **AMB Aparcament Metropolità** para los municipios integrados en esa plataforma.
-- Catálogo central de fuentes en `data/official-sources.json`; la interfaz no tiene URLs municipales dispersas.
-- Las páginas oficiales se comprueban en servidor antes de mostrarse. Si no responden o no contienen el contenido esperado, **no aparece hipervínculo**.
-- Fuentes directas verificadas para Barcelona, L'Hospitalet, Badalona, El Prat, Sant Joan Despí, Sant Just, Santa Coloma, Esplugues, Castelldefels, Montgat y Sant Boi, además de AMB.
-- Reglas temporales que se pueden detectar desde fuentes oficiales, por ejemplo gratuidad de agosto donde exista publicación vigente.
-- Perfil único de residente en el dispositivo; editarlo reemplaza el perfil actual.
-- Modo conducción con `watchPosition`, Wake Lock y mapa que sigue el GPS.
-- Si el usuario mueve manualmente el mapa durante conducción, el seguimiento se pausa y aparece **Volver a seguirme**.
-- Panel inferior con tres alturas: `peek`, `compact`, `expanded`; se desliza desde el tirador sin interferir con el mapa.
-- Al aparcar, el panel queda minimizado y el botón “He aparcado aquí” deja de estar disponible.
-- Micrófono `tap-to-talk`: nunca queda escuchando de forma continua; se apaga al terminar la frase, al tocarlo de nuevo o tras 7 segundos.
-- Tipografía móvil aumentada.
-- Interpretación conservadora de horarios: solo muestra “fuera del horario publicado” cuando el formato puede interpretarse con suficiente seguridad.
+- Perfil con distintivo ambiental DGT: `0 / ECO / C / B / sin distintivo / no lo sé`.
+- Valor inicial para este dispositivo: **B**.
+- Se separa **Tarifa** de **Precio ahora**.
+- Solo muestra “De pago ahora” cuando el horario del tramo puede interpretarse como activo.
+- Solo muestra “Gratis ahora” si existe una regla oficial exacta que lo permite o una excepción oficial vigente.
+- Si el horario está fuera de servicio pero la fuente no confirma libertad de estacionamiento, muestra **No confirmado**, no “gratis”.
+- Excepciones por fecha: L’Hospitalet agosto 2026, Viladecans agosto 2026, y reglas recurrentes de agosto verificadas en Esplugues, Sant Andreu de la Barca, Sant Boi y Sant Vicenç dels Horts.
+- Tarifas ambientales oficiales de Barcelona; ParkBCN usa el distintivo del perfil cuando puede identificar Tarifa A/B/Gremis.
+- Más fuentes municipales exactas: Cornellà, Gavà, Sant Adrià, Sant Andreu, Sant Vicenç y Viladecans, además de las ya incluidas.
+- Las URLs se validan en servidor. Si una página oficial no responde, redirige a login o deja de contener las frases esperadas, **no se muestra ni se usa**.
+- Las páginas generales de inicio no se usan como prueba de una regla concreta.
+- Fuentes oficiales se revalidan periódicamente en servidor (caché 6 h). Las reglas siguen siendo deterministas; no se usa un LLM para decidir legalidad.
 
-## Cobertura y límites reales
+## Fuentes
 
-AMB enumera 36 municipios metropolitanos. ParkBCN V3 puede identificar jurisdicción dentro de esos 36 mediante la capa municipal oficial.
+Prioridad de ParkBCN:
 
-El servicio AMB Aparcament Metropolità publica actualmente información de estacionamiento regulado para 11 municipios: Barcelona, L'Hospitalet, Badalona, El Prat, Sant Joan Despí, Sant Just Desvern, Santa Coloma de Gramenet, Esplugues de Llobregat, Castelldefels, Montgat y Sant Boi de Llobregat.
+1. Señalización física del tramo.
+2. Ayuntamiento / operador municipal oficial.
+3. AMB / GIS oficial.
+4. DGT / BOE para reglas generales.
 
-Por tanto, **identificar el municipio no significa que exista un mapa oficial de tramos regulados para todos los 36**. V3 muestra “sin tramo AMB” cuando no existe esa evidencia, en lugar de inventar una regla.
+La ausencia de una fuente exacta **no se interpreta como permiso para aparcar**.
 
-## Despliegue
+## Deploy
 
-Mismo despliegue que V2:
+Mismo procedimiento que V3:
 
-- Dockerfile en raíz.
-- Puerto interno: `3000`.
-- No hay que cambiar el dominio ni el servicio de EasyPanel.
-- Subir/commit al repo y volver a **Implementar**.
+- mismo repositorio GitHub;
+- mismo Dockerfile;
+- mismo puerto interno `3000`;
+- EasyPanel → Implementar.
 
-## Siguiente evolución recomendada
-
-1. PostgreSQL para persistir catálogo de reglas/fuentes, versiones e historial de cambios.
-2. Job programado para revisar fuentes oficiales y crear versiones de las reglas.
-3. Push real en segundo plano para avisos de finalización.
-4. Integración ZBE/etiqueta ambiental del vehículo.
-5. Incidencias temporales/obras cuando cada ayuntamiento publique un feed oficial utilizable.
-6. Aparcamientos públicos alternativos y ocupación en tiempo real cuando exista API oficial.
-
-La señalización física del tramo siempre prevalece.
+No requiere una base de datos todavía. El siguiente salto (V4) sería PostgreSQL + sincronizador programado de reglas/fuentes.

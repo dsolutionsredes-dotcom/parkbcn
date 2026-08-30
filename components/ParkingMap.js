@@ -16,7 +16,8 @@ const DEFAULT_PROFILE = {
   residentAuthorized: false,
   residentMunicipality: "",
   residentArea: "",
-  plate: ""
+  plate: "",
+  environmentalLabel: "B"
 };
 
 const MUNICIPALITIES = [
@@ -125,6 +126,7 @@ function activeTemporaryRule(official, feature) {
   const type = normalize(feature.properties?.TRAM_TIPUS || "");
   return official.temporaryRules.find((rule) => {
     if (!rule.active) return false;
+    if (!rule.appliesTo?.length) return true;
     const applies = (rule.appliesTo || []).some((item) => type.includes(normalize(item).replace("zona ", "")) || type.includes(normalize(item)));
     const excluded = (rule.excludes || []).some((item) => type.includes(normalize(item)));
     return applies && !excluded;
@@ -144,47 +146,84 @@ function madridClock() {
   return { weekday: days[get("weekday")] || 0, minuteOfDay: Number(get("hour")) * 60 + Number(get("minute")) };
 }
 
+function extractRanges(text = "") {
+  const ranges = [];
+  const re = /(\d{1,2})(?::|\.)(\d{2})\s*h?\s*(?:a|hasta|\-|–|—)\s*(\d{1,2})(?::|\.)(\d{2})\s*h?|(?:de\s+)?(\d{1,2})\s*h?\s*(?:a|hasta|\-|–|—)\s*(\d{1,2})\s*h?/g;
+  let match;
+  while ((match = re.exec(text))) {
+    let start, end;
+    if (match[1] !== undefined) {
+      start = Number(match[1]) * 60 + Number(match[2] || 0);
+      end = Number(match[3]) * 60 + Number(match[4] || 0);
+    } else {
+      start = Number(match[5]) * 60;
+      end = Number(match[6]) * 60;
+    }
+    if (start >= 0 && end > start && end <= 1440) ranges.push([start, end]);
+  }
+  return ranges;
+}
+
+function hm(minutes) {
+  const h = Math.floor(minutes / 60) % 24;
+  const m = minutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 function scheduleStatus(schedule = "") {
   const text = normalize(schedule);
   if (!text) return { known: false };
-  if (/24\s*h|24 horas|24 hores/.test(text)) return { known: true, active: true };
-
-  const hasWeekday = /lunes a viernes|dilluns a divendres/.test(text);
-  const hasSatExtra = /sabado|dissabte/.test(text) && hasWeekday;
-  if (hasSatExtra) return { known: false };
-
-  let days = null;
-  if (/lunes a domingo|dilluns a diumenge|todos los dias|tots els dies/.test(text)) days = [1,2,3,4,5,6,7];
-  else if (/lunes a sabado|dilluns a dissabte/.test(text)) days = [1,2,3,4,5,6];
-  else if (hasWeekday) days = [1,2,3,4,5];
-  else if (/sabado|dissabte/.test(text) && !/lunes|dilluns/.test(text)) days = [6];
-  if (!days) return { known: false };
-
-  const ranges = [];
-  const re = /(\d{1,2})(?::(\d{2}))?\s*h?\s*(?:a|hasta|\-|–|—)\s*(\d{1,2})(?::(\d{2}))?\s*h?/g;
-  let match;
-  while ((match = re.exec(text))) {
-    const start = Number(match[1]) * 60 + Number(match[2] || 0);
-    const end = Number(match[3]) * 60 + Number(match[4] || 0);
-    if (start >= 0 && end > start && end <= 24 * 60) ranges.push([start, end]);
-  }
-  if (!ranges.length) return { known: false };
+  if (/24\s*h|24 horas|24 hores/.test(text)) return { known: true, active: true, nextText: "Regulación 24 h" };
 
   const now = madridClock();
-  if (!days.includes(now.weekday)) return { known: true, active: false };
-  return { known: true, active: ranges.some(([start, end]) => now.minuteOfDay >= start && now.minuteOfDay < end) };
+  let allowed = [];
+  let relevantText = text;
+
+  const allWeek = /lunes a domingo|dilluns a diumenge|todos los dias|tots els dies/.test(text);
+  const monSat = /lunes a sabado|dilluns a dissabte/.test(text);
+  const monFri = /lunes a viernes|dilluns a divendres|dies feiners/.test(text);
+  const satWord = /sabado|dissabte/.test(text);
+  const sunWord = /domingo|diumenge/.test(text);
+
+  if (allWeek) allowed = [1,2,3,4,5,6,7];
+  else if (monSat) allowed = [1,2,3,4,5,6];
+  else if (monFri) allowed = [1,2,3,4,5];
+  else if (satWord && !/lunes|dilluns/.test(text)) allowed = [6];
+  else if (sunWord && !/lunes|dilluns/.test(text)) allowed = [7];
+  else return { known: false };
+
+  // Horarios con bloque laborable + bloque de sábado.
+  if (monFri && satWord) {
+    const satIndex = text.search(/sabado|dissabte/);
+    if (now.weekday === 6) {
+      allowed = [6];
+      relevantText = text.slice(satIndex);
+    } else if (now.weekday >= 1 && now.weekday <= 5) {
+      relevantText = text.slice(0, satIndex);
+    } else {
+      return { known: true, active: false, nextText: "Fuera de los días regulados publicados" };
+    }
+  }
+
+  if (!allowed.includes(now.weekday)) return { known: true, active: false, nextText: "Fuera de los días regulados publicados" };
+  const ranges = extractRanges(relevantText);
+  if (!ranges.length) return { known: false };
+
+  const current = ranges.find(([a, b]) => now.minuteOfDay >= a && now.minuteOfDay < b);
+  if (current) return { known: true, active: true, nextText: `Regulado hasta ${hm(current[1])}` };
+  const later = ranges.find(([a]) => a > now.minuteOfDay);
+  if (later) return { known: true, active: false, nextText: `Próxima regulación hoy a las ${hm(later[0])}` };
+  return { known: true, active: false, nextText: "Regulación finalizada por hoy" };
 }
 
 function getDecision(feature, official, profile, confirmedResidentTrams = []) {
   if (!feature) {
     return {
-      tone: "unknown",
-      icon: "?",
-      title: "Tramo no identificado",
+      tone: "unknown", icon: "?", title: "Tramo no identificado",
       detail: official?.metropolitanMunicipality
-        ? "Municipio reconocido, pero no hay un tramo regulado oficial de AMB en este punto. Puede ser libre, reservado o estar regulado por otra señal."
+        ? "Municipio reconocido, pero no existe un tramo oficial identificado aquí. No asumimos que sea gratis ni que esté permitido."
         : "No se pudo identificar una regla oficial para este punto. Revisa la señalización.",
-      noTimer: true
+      noTimer: true, priceText: "—"
     };
   }
 
@@ -198,9 +237,17 @@ function getDecision(feature, official, profile, confirmedResidentTrams = []) {
   const confirmedResidentTram = tramId && confirmedResidentTrams.includes(tramId);
   const kind = zoneKind(feature);
   const schedule = scheduleStatus(p.HORARI || "");
+  const policy = official?.zonePolicy || {};
+  const minutes = maxMinutes(p);
+  const publishedPrice = policy.priceText || p.PREU_FRACCIO || null;
 
   if (temporary) {
-    return { tone: "good", icon: "✓", title: "Gratis ahora", detail: temporary.summary, noTimer: true, sourceId: temporary.sourceId };
+    return {
+      tone: "good", icon: "✓", title: "Gratis ahora",
+      detail: `${temporary.summary}${temporary.requiresTicket ? " Debes obtener/activar el tique aunque el importe sea 0 €." : ""}`,
+      noTimer: true, priceText: "0 €", sourceId: temporary.sourceId,
+      nextText: schedule.nextText || "Excepción temporal oficial vigente"
+    };
   }
 
   if (kind === "green" && profile.residentAuthorized && profileCityMatch && residentRule) {
@@ -208,66 +255,72 @@ function getDecision(feature, official, profile, confirmedResidentTrams = []) {
     if (areaConfirmed) {
       if (residentRule.freeAssignedGreen === true) {
         return {
-          tone: "good", icon: "✓", title: "Ventaja de residente aplicada",
+          tone: "good", icon: "✓", title: "Condición de residente",
           detail: residentRule.requiresTicket
-            ? "La fuente oficial confirma gratuidad para esta condición de residente, pero debes validar/obtener el tique cuando corresponda."
-            : "La fuente oficial confirma gratuidad para esta condición de residente.",
-          noTimer: true, sourceId: residentRule.sourceId
+            ? "La fuente oficial confirma la bonificación de residente para esta condición. Mantén la validación/tique que exija el municipio."
+            : "La fuente oficial confirma la condición bonificada de residente para este ámbito.",
+          noTimer: true, priceText: "0 €", sourceId: residentRule.sourceId
         };
       }
       if (residentRule.freeAssignedGreen === false) {
         return {
           tone: "good", icon: "R", title: "Tarifa de residente",
-          detail: `Tu condición de residente aplica aquí. ${residentRule.residentDailyPrice ? `Tarifa publicada: ${residentRule.residentDailyPrice}.` : "Consulta la tarifa del tramo."}`,
-          noTimer: true, sourceId: residentRule.sourceId
+          detail: `Tu condición de residente aplica en este tramo confirmado. ${residentRule.residentDailyPrice ? `Tarifa: ${residentRule.residentDailyPrice}.` : "Consulta la tarifa exacta."}`,
+          noTimer: true, priceText: residentRule.residentDailyPrice || "Consultar", sourceId: residentRule.sourceId
         };
       }
+    } else {
       return {
-        tone: "warning", icon: "i", title: "Regla de residente aplicable",
-        detail: "La fuente confirma una condición especial de residente, pero no es seguro asumir gratuidad. Usa ⓘ para revisar la fuente y la tarifa del tramo.",
-        noTimer: false, sourceId: residentRule.sourceId
+        tone: "warning", icon: "i", title: "Confirma tu zona de residente",
+        detail: profile.residentArea
+          ? `Tu autorización no vale automáticamente en todo el municipio. Confirma que este tramo pertenece a ${profile.residentArea}.`
+          : "Tu autorización no vale automáticamente en todo el municipio. Confirma el ámbito exacto antes de aplicar la ventaja de residente.",
+        noTimer: true, priceText: publishedPrice || "Consultar", sourceId: residentRule.sourceId
       };
     }
-
-    return {
-      tone: "warning", icon: "i",
-      title: residentRule.freeAssignedGreen === true ? "Puede ser gratis para ti" : "Puede aplicarte condición de residente",
-      detail: profile.residentArea
-        ? `Tu permiso no se aplica automáticamente a todo el municipio. Confirma que este tramo pertenece a ${profile.residentArea}.`
-        : "Tu permiso no se aplica automáticamente a todo el municipio. Indica tu zona y confirma este tramo en ⓘ.",
-      noTimer: false, sourceId: residentRule.sourceId
-    };
   }
 
   if (residentType && !profile.residentAuthorized) {
-    return { tone: "danger", icon: "!", title: "Zona de residentes", detail: "No aparques aquí como plaza ordinaria sin comprobar que tienes autorización para este ámbito.", noTimer: true };
+    return { tone: "danger", icon: "!", title: "Zona de residentes", detail: "No la trates como plaza ordinaria. Comprueba que tienes autorización para este ámbito.", noTimer: true, priceText: "No aplicable" };
   }
 
-  if ((kind === "green" || kind === "blue") && schedule.known && !schedule.active) {
+  if ((kind === "green" || kind === "blue" || kind === "orange") && schedule.known && !schedule.active) {
+    if (policy.outsideScheduleFree === true) {
+      return {
+        tone: "good", icon: "✓", title: "Gratis ahora",
+        detail: `La fuente oficial permite estacionamiento libre fuera de este horario para esta categoría. ${schedule.nextText || ""}`.trim(),
+        noTimer: true, priceText: "0 €", sourceId: policy.scheduleSourceId,
+        nextText: schedule.nextText
+      };
+    }
     return {
-      tone: "good", icon: "◷", title: "Fuera del horario publicado",
-      detail: "Según el horario del tramo recibido de AMB, la regulación horaria no está activa ahora. Esto no elimina reservas 24 h, vados, DUM ni otras señales específicas.",
-      noTimer: true
+      tone: "warning", icon: "◷", title: "Regulación horaria no activa",
+      detail: `${schedule.nextText || "El horario del tramo no está activo ahora"}. La fuente no permite afirmar de forma automática que sea libre: revisa señal, reservas y exclusividades.`,
+      noTimer: true, priceText: "No confirmado", sourceId: policy.scheduleSourceId,
+      nextText: schedule.nextText
     };
   }
 
-  if (kind === "green" || kind === "blue") {
-    const minutes = maxMinutes(p);
+  if (kind === "green" || kind === "blue" || kind === "orange") {
+    const activeConfirmed = schedule.known && schedule.active;
+    const scheduleText = activeConfirmed ? (schedule.nextText || "Regulación activa") : "El horario del tramo no se pudo interpretar con total certeza";
     return {
-      tone: "info", icon: "P",
-      title: kind === "green" ? "Zona verde regulada" : "Zona azul regulada",
-      detail: minutes
-        ? `Regulación activa o no interpretable con total certeza. Máximo publicado por AMB: ${minutes} min.`
-        : "Consulta horario, tarifa y señalización del tramo antes de dejar el coche.",
-      noTimer: !minutes
+      tone: activeConfirmed ? "info" : "warning", icon: activeConfirmed ? "€" : "i",
+      title: activeConfirmed && publishedPrice ? "De pago ahora" : activeConfirmed ? "Regulación activa" : "Zona regulada · confirma horario",
+      detail: `${scheduleText}.${minutes ? ` Máximo publicado: ${minutes} min.` : ""}${publishedPrice ? ` Tarifa publicada: ${publishedPrice}.` : " Consulta la tarifa mostrada y la señal del tramo."}`,
+      noTimer: !minutes || !activeConfirmed,
+      timerMinutes: activeConfirmed ? minutes : 0,
+      priceText: activeConfirmed ? (publishedPrice || "Consultar") : "No confirmado",
+      sourceId: policy.priceSourceId || policy.scheduleSourceId,
+      nextText: schedule.nextText
     };
   }
 
   if (kind === "red") {
-    return { tone: "danger", icon: "!", title: "Regulación especial", detail: "No la trates como aparcamiento normal sin comprobar la señalización.", noTimer: true };
+    return { tone: "danger", icon: "!", title: "Regulación especial", detail: "Una zona roja puede tener una ventana concreta de uso. No aparques como plaza ordinaria sin comprobar la señal y la fuente municipal.", noTimer: true, priceText: "—" };
   }
 
-  return { tone: "warning", icon: "i", title: "Regulación especial", detail: "Comprueba la señal del tramo antes de aparcar.", noTimer: true };
+  return { tone: "warning", icon: "i", title: "Regulación especial", detail: "Comprueba la señal del tramo antes de aparcar.", noTimer: true, priceText: "—" };
 }
 
 function formatCheckedAt(value) {
@@ -449,13 +502,13 @@ export default function ParkingMap() {
     let cancelled = false;
     setOfficial(null);
     setOfficialLoading(true);
-    fetch(`/api/official?city=${encodeURIComponent(cityForRules)}&type=${encodeURIComponent(p.TRAM_TIPUS || "")}&resident=${profile.residentAuthorized ? "1" : "0"}`)
+    fetch(`/api/official?city=${encodeURIComponent(cityForRules)}&type=${encodeURIComponent(p.TRAM_TIPUS || "")}&tram=${encodeURIComponent(p.TRAM || "")}&tariff=${encodeURIComponent(p.TARIFA || "")}&label=${encodeURIComponent(profile.environmentalLabel || "UNKNOWN")}`)
       .then((r) => r.json())
       .then((data) => { if (!cancelled) setOfficial(data); })
       .catch(() => { if (!cancelled) setOfficial(null); })
       .finally(() => { if (!cancelled) setOfficialLoading(false); });
     return () => { cancelled = true; };
-  }, [cityForRules, p.TRAM_TIPUS, profile.residentAuthorized]);
+  }, [cityForRules, p.TRAM_TIPUS, p.TRAM, p.TARIFA, profile.environmentalLabel]);
 
   const decision = useMemo(
     () => getDecision(activeZone, official, profile, confirmedResidentTrams),
@@ -486,7 +539,8 @@ export default function ParkingMap() {
       residentAuthorized: form.get("residentAuthorized") === "on",
       residentMunicipality: String(form.get("residentMunicipality") || ""),
       residentArea: String(form.get("residentArea") || "").trim(),
-      plate: String(form.get("plate") || "").trim().toUpperCase()
+      plate: String(form.get("plate") || "").trim().toUpperCase(),
+      environmentalLabel: String(form.get("environmentalLabel") || "UNKNOWN")
     };
     setProfile(next);
     localStorage.setItem("parkbcn-profile", JSON.stringify(next));
@@ -505,7 +559,7 @@ export default function ParkingMap() {
   const startParking = useCallback(() => {
     if (parked) return setVoiceText("Ya tienes un aparcamiento activo.");
     if (!location) return locate();
-    const minutes = decision.noTimer ? 0 : maxMinutes(p);
+    const minutes = decision.noTimer ? 0 : (decision.timerMinutes || maxMinutes(p));
     const active = {
       startedAt: Date.now(), lat: location.lat, lng: location.lng,
       decision: { title: decision.title, detail: decision.detail, tone: decision.tone },
@@ -656,7 +710,7 @@ export default function ParkingMap() {
 
       <header className="topBar">
         <div>
-          <div className="brand">ParkBCN <span>V3</span></div>
+          <div className="brand">ParkBCN <span>V3.1</span></div>
           <div className="status">{loadingZones ? "Actualizando zonas…" : municipality?.name ? `${municipality.name} · ${status}` : status}</div>
         </div>
         <div className="topActions">
@@ -719,10 +773,11 @@ export default function ParkingMap() {
                     </div>
                     <h2>{p.TRAM || "Tramo de estacionamiento"}</h2>
                     <p className="city">{cityForRules || "Área metropolitana de Barcelona"}</p>
-                    <div className="facts">
+                    <div className="facts factsFour">
                       <div><small>Horario</small><b>{p.HORARI || "Consultar señal"}</b></div>
                       <div><small>Máximo</small><b>{maxMinutes(p) ? `${maxMinutes(p)} min` : "Consultar"}</b></div>
-                      <div><small>Tarifa</small><b>{p.TARIFA || p.PREU_FRACCIO || "Consultar"}</b></div>
+                      <div><small>Tarifa</small><b>{p.TARIFA || "Consultar"}</b></div>
+                      <div><small>Precio ahora</small><b>{decision.priceText || p.PREU_FRACCIO || "Consultar"}</b></div>
                     </div>
                   </>
                 ) : (
@@ -771,6 +826,7 @@ export default function ParkingMap() {
               <label className="switchRow"><input type="checkbox" name="residentAuthorized" defaultChecked={profile.residentAuthorized} /><span>Tengo autorización municipal de residente</span></label>
               <label><span>Municipio de mi autorización</span><select name="residentMunicipality" defaultValue={profile.residentMunicipality}><option value="">Seleccionar…</option>{MUNICIPALITIES.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
               <label><span>Zona / barrio autorizado</span><input name="residentArea" defaultValue={profile.residentArea} placeholder="Ej. Collblanc-La Torrassa" /><small>No se asumirá que tu permiso vale en todo el municipio.</small></label>
+              <label><span>Distintivo ambiental DGT</span><select name="environmentalLabel" defaultValue={profile.environmentalLabel || "B"}><option value="0">0 emisiones</option><option value="ECO">ECO</option><option value="C">C</option><option value="B">B</option><option value="NONE">Sin distintivo</option><option value="UNKNOWN">No lo sé</option></select><small>Tu vehículo actual: B. Algunas tarifas cambian según esta etiqueta. <a className="inlineOfficialLink" href="https://www.dgt.es/nuestros-servicios/tu-vehiculo/tus-vehiculos/distintivo-ambiental/" target="_blank" rel="noreferrer">Consultar en DGT ↗</a></small></label>
               <label><span>Matrícula (opcional)</span><input name="plate" defaultValue={profile.plate} placeholder="1234ABC" autoCapitalize="characters" /></label>
               <button className="saveButton" type="submit">Guardar mi perfil</button>
             </form>
@@ -782,9 +838,9 @@ export default function ParkingMap() {
         <div className="modalBackdrop" onMouseDown={() => setInfoOpen(false)}>
           <div className="modalCard infoModal" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modalHeader"><div><small>MÁS INFO</small><h3>{p.TRAM_TIPUS || cityForRules || "Regla de estacionamiento"}</h3></div><button onClick={() => setInfoOpen(false)}>×</button></div>
-            <div className={`modalDecision ${decision.tone}`}><strong>{decision.title}</strong><p>{decision.detail}</p></div>
+            <div className={`modalDecision ${decision.tone}`}><strong>{decision.title}</strong><p>{decision.detail}</p>{decision.priceText && <div className="decisionPrice">{decision.priceText}</div>}</div>
 
-            {profile.residentAuthorized && <div className="profileHint"><b>Tu perfil:</b> {profile.residentMunicipality || "sin municipio"}{profile.residentArea ? ` · ${profile.residentArea}` : ""}</div>}
+            <div className="profileHint"><b>Tu vehículo:</b> distintivo {profile.environmentalLabel === "NONE" ? "sin etiqueta" : profile.environmentalLabel || "no indicado"}{profile.residentAuthorized ? ` · residente autorizado en ${profile.residentMunicipality || "municipio sin indicar"}${profile.residentArea ? ` / ${profile.residentArea}` : ""}` : ""}</div>
             {canConfirmResidentTram && <button type="button" className={`residentConfirm ${isConfirmedResidentTram ? "confirmed" : ""}`} onClick={toggleResidentTram}>{isConfirmedResidentTram ? "✓ Este tramo pertenece a mi zona autorizada" : "Confirmar que este tramo pertenece a mi zona autorizada"}</button>}
 
             {official?.sources?.length > 0 && (
